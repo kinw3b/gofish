@@ -6,10 +6,13 @@ import { appendFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-const HOST_VERSION = '1.1.0'
+const HOST_VERSION = '1.2.0'
 // Bumped whenever a reply shape changes. install.sh copies this file out of the
 // repo, so a pulled repo and an installed bridge drift apart silently otherwise.
+// `watch` / `settled` are additive on protocol 2: an older host answers
+// `unknown command watch` and Send keeps working.
 const PROTOCOL = 2
+const SETTLE_MS = Number(process.env.GOFISH_SETTLE_MS) || 5000
 const ORCA = process.env.GOFISH_ORCA_BIN || 'orca'
 const LOG = join(homedir(), 'Library', 'Logs', 'gofish-orca-host.log')
 
@@ -174,6 +177,65 @@ async function dispatch(message) {
   }
 }
 
+// Completion is a push the panel cannot get from sendNativeMessage, which
+// closes stdin before a later result exists. `watch` keeps this process alive
+// on a connectNative port and polls task status. `check` is deliberately not
+// used: it would consume the coordinator's inbox.
+const watches = new Map()
+let watchTimer = null
+let pollFlight = null
+let stopping = false
+
+function armWatch(runId, taskIds) {
+  if (stopping || typeof runId !== 'string' || runId.length === 0) return
+  let ids = watches.get(runId)
+  if (!ids) {
+    ids = new Set()
+    watches.set(runId, ids)
+  }
+  for (const id of taskIds ?? []) {
+    if (typeof id === 'string' && id.length > 0) ids.add(id)
+  }
+  if (watchTimer || stopping) return
+  void pollWatch()
+  watchTimer = setInterval(() => void pollWatch(), SETTLE_MS)
+}
+
+function stopWatch() {
+  if (watchTimer) clearInterval(watchTimer)
+  watchTimer = null
+}
+
+function pollWatch() {
+  if (stopping || pollFlight) return
+  pollFlight = runPoll().finally(() => {
+    pollFlight = null
+  })
+}
+
+async function runPoll() {
+  for (const [runId, ids] of watches) {
+    if (stopping) return
+    if (ids.size === 0) {
+      watches.delete(runId)
+      continue
+    }
+    const listed = await orca(
+      ['orchestration', 'task-list', '--run', runId, '--brief', '--json'],
+      20000
+    )
+    if (!listed.ok || stopping) continue
+    for (const task of listed.result?.tasks ?? []) {
+      if (!ids.has(task.id)) continue
+      if (task.status !== 'completed' && task.status !== 'failed') continue
+      ids.delete(task.id)
+      log(`SETTLED ${task.id} ${task.status}`)
+      write({ cmd: 'settled', protocol: PROTOCOL, ok: true, taskId: task.id, status: task.status })
+    }
+  }
+  if ([...watches.values()].every((ids) => ids.size === 0)) stopWatch()
+}
+
 async function handle(message) {
   switch (message?.cmd) {
     case 'ping': {
@@ -190,6 +252,12 @@ async function handle(message) {
     case 'dispatch':
       if (!message.spec) return { ok: false, reason: 'dispatch needs a spec' }
       return await dispatch(message)
+    case 'watch':
+      if (!message.runId || !Array.isArray(message.taskIds) || message.taskIds.length === 0) {
+        return { ok: false, reason: 'watch needs a run and task ids' }
+      }
+      armWatch(message.runId, message.taskIds)
+      return { ok: true, watching: true }
     default:
       return { ok: false, reason: `unknown command ${message?.cmd}` }
   }
@@ -197,11 +265,21 @@ async function handle(message) {
 
 // --- native messaging framing: 4-byte little-endian length, then JSON ---
 
+// One frame at a time. A status poll and a command reply can both be ready
+// to write, and two overlapping stdout writes would splice the length prefix.
+let writeQueue = Promise.resolve()
+
 function write(payload) {
   const body = Buffer.from(JSON.stringify(payload), 'utf8')
   const header = Buffer.alloc(4)
   header.writeUInt32LE(body.length)
-  process.stdout.write(Buffer.concat([header, body]))
+  const frame = Buffer.concat([header, body])
+  writeQueue = writeQueue.then(
+    () =>
+      new Promise((resolve) => {
+        process.stdout.write(frame, () => resolve())
+      })
+  )
 }
 
 let buffered = Buffer.alloc(0)
@@ -243,5 +321,11 @@ process.stdin.on('data', (chunk) => {
 // Exiting on `end` killed the reply in flight and Chrome reported "Native host
 // has exited".
 process.stdin.on('end', () => {
-  pending.then(() => process.exit(0)).catch(() => process.exit(0))
+  stopping = true
+  stopWatch()
+  Promise.resolve(pollFlight)
+    .then(() => pending)
+    .then(() => writeQueue)
+    .then(() => process.exit(0))
+    .catch(() => process.exit(0))
 })

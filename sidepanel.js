@@ -3,7 +3,17 @@
 // Orca agent launcher ids accepted by `orchestration worker-start --agent`. Which
 // of these is actually enabled lives in Orca settings, not the CLI, so the
 // worker agent is the user's choice rather than the destination terminal's.
-const AGENTS = ['claude', 'codex', 'cursor', 'antigravity', 'muse', 'zcode', 'opencode', 'opencode2']
+const AGENTS = [
+  'claude',
+  'codex',
+  'cursor',
+  'antigravity',
+  'muse',
+  'zcode',
+  'opencode',
+  'opencode2',
+  'grok'
+]
 
 const INTENTS = ['fix', 'change', 'question', 'approve']
 const HOST = 'com.gofish.orca'
@@ -12,6 +22,10 @@ const PROTOCOL = 2
 let destination = null
 let destinationTargets = []
 let runId = null
+// Long-lived port: sendNativeMessage cannot push, so completion arrives here.
+let watchPort = null
+let watchGaveUp = false
+let watchAttempts = 0
 
 const captureNodes = new Map()
 
@@ -91,6 +105,106 @@ function describeBridgeFailure(reply) {
   if (/forbidden/i.test(detail)) return `Host manifest rejects id ${chrome.runtime.id}`
   if (/exited|closed/i.test(detail)) return 'Bridge crashed: see ~/Library/Logs/gofish-orca-host.log'
   return detail || 'Bridge unavailable'
+}
+
+function openWatches() {
+  return captures.filter(
+    (capture) => capture.sent?.taskId && capture.sent.runId && !capture.sent.settled && !capture.done
+  )
+}
+
+function ensureWatchPort() {
+  if (watchPort || watchGaveUp) return watchPort
+  try {
+    watchPort = chrome.runtime.connectNative(HOST)
+  } catch (error) {
+    watchGaveUp = true
+    setStatus('Completion watch unavailable')
+    return null
+  }
+  watchPort.onMessage.addListener((reply) => {
+    if (!reply || reply.protocol !== PROTOCOL) {
+      giveUpWatch('Bridge is out of date: run native/install.sh again')
+      return
+    }
+    if (reply.cmd === 'settled' && reply.taskId) {
+      watchAttempts = 0
+      showLanded(reply.taskId, reply.status)
+      return
+    }
+    if (reply.ok === false && /unknown command/.test(reply.reason ?? '')) {
+      giveUpWatch('Bridge is out of date: run native/install.sh again')
+      return
+    }
+    if (reply.ok === true) watchAttempts = 0
+  })
+  watchPort.onDisconnect.addListener(() => {
+    watchPort = null
+    if (watchGaveUp || openWatches().length === 0) return
+    if (watchAttempts >= 3) {
+      giveUpWatch('Completion watch dropped. See ~/Library/Logs/gofish-orca-host.log')
+      return
+    }
+    watchAttempts += 1
+    setTimeout(() => postWatch(), 1500)
+  })
+  return watchPort
+}
+
+function giveUpWatch(text) {
+  if (watchGaveUp) return
+  watchGaveUp = true
+  const port = watchPort
+  watchPort = null
+  try {
+    port?.disconnect()
+  } catch (error) {
+    // The port is already gone when this runs from onDisconnect.
+  }
+  setStatus(text)
+}
+
+// Asks the host to ping back when those tasks complete. Does not read mail.
+function postWatch() {
+  const pending = openWatches()
+  if (pending.length === 0) return
+  const port = ensureWatchPort()
+  if (!port) return
+  const byRun = new Map()
+  for (const capture of pending) {
+    const ids = byRun.get(capture.sent.runId) ?? []
+    ids.push(capture.sent.taskId)
+    byRun.set(capture.sent.runId, ids)
+  }
+  for (const [watchedRun, taskIds] of byRun) {
+    port.postMessage({ cmd: 'watch', id: `watch-${watchedRun}`, runId: watchedRun, taskIds })
+  }
+}
+
+function lockCatch(node) {
+  node.dataset.done = 'true'
+  for (const control of node.querySelectorAll('input, textarea, button')) {
+    if (control.classList.contains('catch-head')) continue
+    control.disabled = true
+  }
+  node.querySelector('.send').hidden = true
+}
+
+function showLanded(taskId, status) {
+  const capture = captures.find((entry) => entry.sent?.taskId === taskId)
+  if (!capture || capture.done || capture.sent.settled) return
+  const failed = status === 'failed'
+  capture.sent.settled = failed ? 'failed' : 'completed'
+  capture.done = true
+  const node = nodeFor(capture)
+  if (!node) return
+  const tag = node.querySelector('.sent-tag')
+  tag.hidden = false
+  tag.textContent = failed ? 'failed' : 'completed'
+  tag.dataset.state = failed ? 'failed' : 'completed'
+  lockCatch(node)
+  if (failed) showCatchError(node, 'Worker failed')
+  setStatus(failed ? 'A catch failed' : 'Completed', failed ? undefined : 'done')
 }
 
 function showDestinationError(text) {
@@ -221,14 +335,22 @@ async function sendCapture(capture, node) {
 
   runId = reply.runId
   void chrome.storage.session.set({ runId })
-  capture.sent = { dispatchId: reply.dispatchId, taskId: reply.taskId, agent: reply.agent }
+  capture.sent = {
+    dispatchId: reply.dispatchId,
+    taskId: reply.taskId,
+    agent: reply.agent,
+    runId: reply.runId
+  }
   node.dataset.sent = 'true'
   const tag = node.querySelector('.sent-tag')
   tag.hidden = false
+  tag.dataset.state = 'sent'
   tag.title = `task ${reply.taskId ?? '?'} · dispatch ${reply.dispatchId ?? '?'}`
   button.textContent = 'Sent'
+  button.title = reply.taskId ? 'Waiting for the worker to finish' : ''
   if (reply.target) destination = reply.target
   setStatus(`Dispatched to ${reply.agent}`, 'good')
+  if (reply.taskId && reply.runId) postWatch()
   return true
 }
 
@@ -389,6 +511,7 @@ function renderCapture(capture) {
   const sendButton = node.querySelector('.send')
   if (capture.intent === 'approve') sendButton.disabled = true
   sendButton.addEventListener('click', () => {
+    if (capture.done || capture.sent) return
     void sendCapture(capture, node)
   })
 
@@ -403,7 +526,8 @@ function renderCapture(capture) {
     input.addEventListener('change', () => {
       capture.intent = intent
       // Approve carries no work, so there is nothing to dispatch.
-      sendButton.disabled = intent === 'approve' || Boolean(capture.sent)
+      if (capture.done || capture.sent) return
+      sendButton.disabled = intent === 'approve'
     })
     const span = document.createElement('span')
     span.textContent = intent

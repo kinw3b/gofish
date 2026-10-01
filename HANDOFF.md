@@ -12,7 +12,7 @@ what you need to know to keep building it.
 | `content/target-format.js` | `formatGrabPayloadAsText` / `formatAnnotationsAsMarkdown`, byte-identical to Orca's. |
 | `orca-task-spec.js` | Builds the orchestration Task spec from a catch. IIFE-wrapped; exports `globalThis.OrcaTaskSpec`. |
 | `sidepanel.{html,css,js}` | The panel. |
-| `native/gofish-orca-host.mjs` | Native messaging host. Shells out to the `orca` CLI. `ping` / `resolve` / `dispatch`. |
+| `native/gofish-orca-host.mjs` | Native messaging host. Shells out to the `orca` CLI. `ping` / `resolve` / `dispatch` / `watch`. |
 | `native/install.sh` | Copies the host out of this repo and registers it with every Chrome/Chromium/Brave profile. |
 
 ## Non-obvious things that will bite you
@@ -49,7 +49,17 @@ destination mid-stack creates a second Run, which is correct.
 
 **Nothing drains the coordinator inbox.** After a batch, the agent in the destination conversation
 should run `orca orchestration check --ack` and `worker-release`. Workers otherwise pile up as
-reclaimable.
+reclaimable. The panel's completion watch uses `task-list`, never `check`, so it does not take
+that mail.
+
+## When a catch finishes
+
+Send still goes through `sendNativeMessage`, which cannot push a later result. After a dispatch
+the panel opens a `connectNative` port and sends `watch` with the Run id and task ids. The host
+polls `orchestration task-list` and writes a `settled` message when a task is `completed` or
+`failed`. A completed task locks the catch and shows a green **completed** pill. There is no
+manual check-off. Protocol stays 2: an older installed host replies `unknown command watch` and the
+panel says to re-run `install.sh`. Send keeps working either way.
 
 ## Testing the layout without the browser
 

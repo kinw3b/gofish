@@ -57,6 +57,11 @@ lives in Orca's settings and the CLI does not report it, so this is a pick, not 
 Use the refresh control on the destination row to re-resolve after you open or close an Orca
 conversation. A dispatch Orca refuses is reported on the catch itself, with Orca's own wording.
 
+When that worker finishes, the catch closes itself: a green **completed** pill, and the note,
+intent, and action buttons lock. A failed worker gets a **failed** pill instead. The bridge
+learns this from the task's status and does not read or acknowledge the conversation's mail.
+`grok` is one of the **Run as** launchers.
+
 ### Installing the bridge
 
 A browser extension cannot open Orca's unix runtime socket or spawn the CLI, so Send goes through
