@@ -66,6 +66,17 @@ async function callHost(message) {
   }
 }
 
+// Chrome's three native-messaging failures need three different fixes, so say
+// which one happened instead of collapsing them into "not installed".
+function describeBridgeFailure(reply) {
+  if (reply.reason !== 'bridge-missing') return reply.reason
+  const detail = reply.detail ?? ''
+  if (/not found/i.test(detail)) return 'Bridge not registered: run native/install.sh'
+  if (/forbidden/i.test(detail)) return `Host manifest rejects id ${chrome.runtime.id}`
+  if (/exited|closed/i.test(detail)) return 'Bridge crashed: see ~/Library/Logs/gofish-orca-host.log'
+  return detail || 'Bridge unavailable'
+}
+
 function showDestination(state, text) {
   destinationButton.dataset.ready = state
   destinationText.textContent = text
@@ -76,10 +87,7 @@ async function refreshDestination() {
   const reply = await callHost({ cmd: 'resolve' })
   if (!reply.ok) {
     destination = null
-    showDestination(
-      'false',
-      reply.reason === 'bridge-missing' ? 'Bridge not installed: run native/install.sh' : reply.reason
-    )
+    showDestination('false', describeBridgeFailure(reply))
     return
   }
   destination = reply.target
@@ -89,6 +97,7 @@ async function refreshDestination() {
 }
 
 destinationButton.addEventListener('click', () => void refreshDestination())
+destinationButton.title = `Send target. This extension is ${chrome.runtime.id}`
 
 async function sendCapture(capture, node) {
   if (capture.sent) return true
@@ -113,9 +122,7 @@ async function sendCapture(capture, node) {
   if (!reply.ok) {
     button.disabled = false
     button.textContent = 'Send'
-    setStatus(
-      reply.reason === 'bridge-missing' ? 'Bridge not installed: run native/install.sh' : reply.reason
-    )
+    setStatus(describeBridgeFailure(reply))
     return false
   }
 
