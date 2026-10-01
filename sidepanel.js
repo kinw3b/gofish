@@ -295,6 +295,41 @@ destinationRow.title = `Send destination. This extension is ${chrome.runtime.id}
 // A dispatch can fail for reasons only Orca knows, such as an agent launcher
 // that is not enabled. The footer status scrolls out of sight on a short panel,
 // so the reason also lands on the card the user just pressed Send on.
+async function blobToBase64(blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  }
+  return btoa(binary)
+}
+
+// Clipboard images (Shottr etc.) have no path, so the host saves them and the
+// note carries `[/abs/path.png]` for the worker to open.
+async function pasteImages(note, capture, images) {
+  setStatus('Saving pasted image…')
+  const paths = []
+  for (const image of images) {
+    const reply = await callHost({ cmd: 'saveImage', mime: image.type, base64: await blobToBase64(image) })
+    if (!reply.ok) {
+      const reason = /unknown command/.test(reply.reason ?? '')
+        ? 'Bridge is out of date: run native/install.sh again'
+        : describeBridgeFailure(reply)
+      setStatus(`Paste failed: ${reason}`)
+      return
+    }
+    paths.push(`[${reply.path}]`)
+  }
+  const start = note.selectionStart
+  const end = note.selectionEnd
+  const before = note.value.slice(0, start)
+  const text = (before && !/\s$/.test(before) ? ' ' : '') + paths.join(' ') + ' '
+  note.setRangeText(text, start, end, 'end')
+  capture.comment = note.value
+  note.focus()
+  setStatus(images.length > 1 ? `Attached ${images.length} images` : 'Attached image', 'done')
+}
+
 function showCatchError(node, text) {
   const slot = node.querySelector('.catch-error')
   slot.textContent = text ?? ''
@@ -535,8 +570,15 @@ function renderCapture(capture) {
     intents.appendChild(label)
   }
 
-  node.querySelector('.note').addEventListener('input', (event) => {
+  const note = node.querySelector('.note')
+  note.addEventListener('input', (event) => {
     capture.comment = event.target.value
+  })
+  note.addEventListener('paste', (event) => {
+    const images = [...(event.clipboardData?.files ?? [])].filter((file) => file.type.startsWith('image/'))
+    if (images.length === 0) return
+    event.preventDefault()
+    void pasteImages(note, capture, images)
   })
   node.querySelector('.copy-text').addEventListener('click', () => {
     void writeText(OrcaTargetFormat.formatGrabPayloadAsText(capture.payload), 'Copied text')

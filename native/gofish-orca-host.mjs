@@ -2,11 +2,12 @@
 // Chrome extensions cannot open Orca's unix runtime socket or spawn processes,
 // so this short-lived helper shells out to the `orca` CLI on their behalf.
 import { execFile } from 'node:child_process'
-import { appendFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-const HOST_VERSION = '1.2.0'
+const HOST_VERSION = '1.3.0'
 // Bumped whenever a reply shape changes. install.sh copies this file out of the
 // repo, so a pulled repo and an installed bridge drift apart silently otherwise.
 // `watch` / `settled` are additive on protocol 2: an older host answers
@@ -15,6 +16,9 @@ const PROTOCOL = 2
 const SETTLE_MS = Number(process.env.GOFISH_SETTLE_MS) || 5000
 const ORCA = process.env.GOFISH_ORCA_BIN || 'orca'
 const LOG = join(homedir(), 'Library', 'Logs', 'gofish-orca-host.log')
+// Outside ~/Documents: TCC would block a browser-launched host from writing there.
+const PASTES = join(homedir(), 'Library', 'Application Support', 'GoFish', 'pastes')
+const IMAGE_EXT = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' }
 
 function log(line) {
   try {
@@ -236,6 +240,20 @@ async function runPoll() {
   if ([...watches.values()].every((ids) => ids.size === 0)) stopWatch()
 }
 
+// The panel cannot write files, so a pasted clipboard image lands here and the
+// worker gets its absolute path in the note.
+function saveImage(message) {
+  const ext = IMAGE_EXT[message.mime]
+  if (!ext || typeof message.base64 !== 'string' || message.base64.length === 0) {
+    return { ok: false, reason: 'saveImage needs a png/jpeg/gif/webp image' }
+  }
+  mkdirSync(PASTES, { recursive: true })
+  const path = join(PASTES, `paste-${Date.now()}-${randomBytes(3).toString('hex')}.${ext}`)
+  writeFileSync(path, Buffer.from(message.base64, 'base64'))
+  log(`PASTE ${path}`)
+  return { ok: true, path }
+}
+
 async function handle(message) {
   switch (message?.cmd) {
     case 'ping': {
@@ -258,6 +276,8 @@ async function handle(message) {
       }
       armWatch(message.runId, message.taskIds)
       return { ok: true, watching: true }
+    case 'saveImage':
+      return saveImage(message)
     default:
       return { ok: false, reason: `unknown command ${message?.cmd}` }
   }

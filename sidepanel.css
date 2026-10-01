@@ -468,7 +468,7 @@ main {
   border-radius: 6px;
   padding: 6px 8px;
   resize: vertical;
-  min-height: 46px;
+  min-height: 84px;
 }
 
 .note::placeholder {
