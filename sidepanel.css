@@ -212,6 +212,32 @@ h1 {
   white-space: nowrap;
 }
 
+.agent-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  margin-top: -3px;
+}
+
+.agent-label {
+  flex: none;
+  font: 400 11px/1.4 var(--font-mono);
+  color: var(--ink-soft);
+}
+
+.agent-select {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  padding: 3px 4px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: none;
+  font: 400 11px/1.4 var(--font-mono);
+  color: var(--ink);
+}
+
 .toggles {
   display: flex;
   flex-wrap: wrap;
@@ -445,6 +471,17 @@ main {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
+}
+
+.catch-error {
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent-wash);
+  color: var(--ink);
+  font: 400 11.5px/1.45 var(--font-ui);
+  overflow-wrap: anywhere;
 }
 
 /* --------------------------------------------------------------- buttons */

@@ -1,10 +1,16 @@
 'use strict'
 
+// Orca agent launcher ids accepted by `orchestration worker-start --agent`. Which
+// of these is actually enabled lives in Orca settings, not the CLI, so the
+// worker agent is the user's choice rather than the destination terminal's.
+const AGENTS = ['claude', 'codex', 'cursor', 'antigravity', 'muse', 'zcode', 'opencode', 'opencode2']
+
 const INTENTS = ['fix', 'change', 'question', 'approve']
 const HOST = 'com.gofish.orca'
 const PROTOCOL = 2
 
 let destination = null
+let destinationTargets = []
 let runId = null
 
 const captureNodes = new Map()
@@ -31,6 +37,7 @@ const destinationRow = document.querySelector('.destination')
 const destinationSelect = document.getElementById('destination')
 const destinationText = destinationRow.querySelector('.destination-text')
 const destinationRefresh = document.getElementById('destination-refresh')
+const agentSelect = document.getElementById('agent')
 const sendAllButton = document.getElementById('send-all')
 
 function setStatus(text, tone) {
@@ -109,6 +116,7 @@ async function refreshDestination() {
   }
 
   const stored = await chrome.storage.session.get('destinationHandle')
+  destinationTargets = reply.targets
   destinationSelect.replaceChildren()
   for (const target of reply.targets) {
     const option = document.createElement('option')
@@ -120,19 +128,64 @@ async function refreshDestination() {
   // recently active one, which is the usual answer.
   const keep = reply.targets.some((target) => target.terminalHandle === stored.destinationHandle)
   destinationSelect.value = keep ? stored.destinationHandle : reply.targets[0].terminalHandle
-  destination = reply.targets.find(
-    (target) => target.terminalHandle === destinationSelect.value
-  )
+  destination = targetFor(destinationSelect.value)
+  followDestinationAgent()
   destinationRow.dataset.ready = 'true'
   destinationText.hidden = true
   destinationSelect.hidden = false
 }
 
+for (const id of AGENTS) {
+  const option = document.createElement('option')
+  option.value = id
+  option.textContent = id
+  agentSelect.appendChild(option)
+}
+agentSelect.value = 'claude'
+
+// An explicit pick sticks; otherwise the agent follows whichever conversation
+// is selected, which is right until the user says otherwise.
+let agentPinned = false
+
+async function restoreAgent() {
+  const stored = await chrome.storage.session.get('agent')
+  if (stored.agent && AGENTS.includes(stored.agent)) {
+    agentSelect.value = stored.agent
+    agentPinned = true
+  }
+}
+
+function targetFor(handle) {
+  return destinationTargets.find((target) => target.terminalHandle === handle) ?? null
+}
+
+function followDestinationAgent() {
+  if (agentPinned) return
+  const identity = destination?.agentIdentity
+  if (identity && AGENTS.includes(identity)) agentSelect.value = identity
+}
+
+agentSelect.addEventListener('change', () => {
+  agentPinned = true
+  void chrome.storage.session.set({ agent: agentSelect.value })
+})
+
 destinationSelect.addEventListener('change', () => {
   void chrome.storage.session.set({ destinationHandle: destinationSelect.value })
+  destination = targetFor(destinationSelect.value)
+  followDestinationAgent()
 })
 destinationRefresh.addEventListener('click', () => void refreshDestination())
 destinationRow.title = `Send destination. This extension is ${chrome.runtime.id}`
+
+// A dispatch can fail for reasons only Orca knows, such as an agent launcher
+// that is not enabled. The footer status scrolls out of sight on a short panel,
+// so the reason also lands on the card the user just pressed Send on.
+function showCatchError(node, text) {
+  const slot = node.querySelector('.catch-error')
+  slot.textContent = text ?? ''
+  slot.hidden = !text
+}
 
 async function sendCapture(capture, node) {
   if (capture.sent) return true
@@ -142,6 +195,7 @@ async function sendCapture(capture, node) {
     return false
   }
   const button = node.querySelector('.send')
+  showCatchError(node, null)
   button.disabled = true
   button.textContent = 'Sending…'
   setStatus(`Dispatching ${OrcaTaskSpec.buildTaskTitle(capture)}`)
@@ -151,6 +205,7 @@ async function sendCapture(capture, node) {
     spec,
     title: OrcaTaskSpec.buildTaskTitle(capture),
     terminalHandle: destinationSelect.value || null,
+    agent: agentSelect.value,
     runId,
     objective: `GoFish design feedback: ${capture.payload.page.sanitizedUrl}`
   })
@@ -158,7 +213,9 @@ async function sendCapture(capture, node) {
   if (!reply.ok) {
     button.disabled = false
     button.textContent = 'Send'
-    setStatus(describeBridgeFailure(reply))
+    const detail = describeBridgeFailure(reply)
+    showCatchError(node, detail)
+    setStatus(detail)
     return false
   }
 
@@ -459,5 +516,6 @@ void (async () => {
   showHost((await activeTab())?.url)
   const stored = await chrome.storage.session.get('runId')
   runId = stored.runId ?? null
+  await restoreAgent()
   await refreshDestination()
 })()

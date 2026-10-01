@@ -34,6 +34,11 @@
         <button id="destination-refresh" class="refresh" type="button" title="Refresh destinations" aria-label="Refresh destinations">&#8635;</button>
       </div>
 
+      <div class="agent-row">
+        <label class="agent-label" for="agent">Run as</label>
+        <select id="agent" class="agent-select" aria-label="Agent to run the worker"></select>
+      </div>
+
       <div class="toggles">
         <label class="toggle">
           <input type="checkbox" id="auto-copy" checked />
@@ -87,6 +92,7 @@
             <button class="copy-img" type="button" hidden>Image</button>
             <button class="remove quiet" type="button">Remove</button>
           </div>
+          <p class="catch-error" hidden></p>
         </div>
       </article>
     </template>
