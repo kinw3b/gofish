@@ -22,44 +22,7 @@ paste is byte-identical to what Orca's own browser produces.
   the list. **Esc** in the page, or **Reel in**, disarms.
 - Open a catch for its screenshot, an intent (fix / change / question / approve), a note, and
   `Text` (Orca's grab format), `Markdown` (one Design Feedback block), `Image` (cropped PNG).
-- **Copy all** — every catch as one `## Send to Orca
-
-**Send** dispatches the catch as a supervised Orca worker in the worktree of the conversation you
-pick, instead of pasting text at you. It binds an orchestration Run to that conversation's
-terminal as coordinator and starts a worker with `worker-start`. The worker's `worker_done`
-report lands back in that same conversation, so the agent you are talking to sees the result.
-
-The destination row lists every live agent terminal, most recently active first, and remembers
-your choice. It is a picker rather than a guess on purpose: Orca's `active` worktree selector
-means "the worktree containing the current directory", and this bridge runs with no meaningful
-working directory, so there is no focused conversation for it to detect.
-
-The task spec follows Orca's task-spec contract (Target, Change, Constraints, Ownership,
-Observable acceptance) and carries the Design Feedback markdown underneath as evidence. An
-`approve` catch dispatches nothing; there is no work in it.
-
-The header row shows exactly where a Send will go: worktree, conversation, agent. Click it to
-re-resolve. It follows your active Orca tab, so check it before sending a stack.
-
-### Installing the bridge
-
-A browser extension cannot open Orca's unix runtime socket or spawn the CLI, so Send goes through
-a native messaging host:
-
-```sh
-bash native/install.sh
-```
-
-It copies the host into `~/Library/Application Support/GoFish/`, writes a wrapper with absolute
-paths to `node` and `orca` (Chrome gives native hosts a minimal PATH), and registers it with every
-Chrome, Chromium and Brave profile on the machine. Because the host is **copied**, re-run
-`install.sh` after every `git pull` that touches `native/`: the panel detects the mismatch and
-says so rather than failing strangely. The host deliberately does not run from this repo: macOS gates `~/Documents`, `~/Desktop` and `~/Downloads` per application, and a browser
-without that grant cannot launch a host living there. It reports this as `Native host has exited`
-with the process never starting. Until it is installed, Send reports `Bridge not installed` and the copy
-buttons work as before.
-
-## Design Feedback` markdown block, the same thing Orca's
+- **Copy all** — every catch as one `## Design Feedback` markdown block, the same thing Orca's
   annotation tray sends to a chat.
 
 ## What's captured
@@ -85,8 +48,14 @@ The task spec follows Orca's task-spec contract (Target, Change, Constraints, Ow
 Observable acceptance) and carries the Design Feedback markdown underneath as evidence. An
 `approve` catch dispatches nothing; there is no work in it.
 
-The header row shows exactly where a Send will go: worktree, conversation, agent. Click it to
-re-resolve. It follows your active Orca tab, so check it before sending a stack.
+**Run as** picks the agent launcher the worker starts with. It follows the destination's own
+agent until you choose one, then your choice sticks. It is separate from the destination because
+inheriting that terminal's identity dispatches launchers Orca may not have enabled, and Orca
+refuses those: `Agent launcher opencode is disabled or unavailable`. Which launchers are enabled
+lives in Orca's settings and the CLI does not report it, so this is a pick, not a detection.
+
+Use the refresh control on the destination row to re-resolve after you open or close an Orca
+conversation. A dispatch Orca refuses is reported on the catch itself, with Orca's own wording.
 
 ### Installing the bridge
 
@@ -111,6 +80,10 @@ buttons work as before.
 Context lives in `PRODUCT.md` and `DESIGN.md`. Light by default and dark with the browser, warm
 paper neutrals, one vermilion accent. The in-page highlight is an outline with **no fill**, so an
 element's real colours still read true while you're judging them.
+
+## Working on it
+
+See [HANDOFF.md](./HANDOFF.md) for the architecture, the platform traps, and what is still open.
 
 ## Credit
 
