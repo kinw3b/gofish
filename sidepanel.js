@@ -119,6 +119,7 @@ function ensureWatchPort() {
     watchPort = chrome.runtime.connectNative(HOST)
   } catch (error) {
     watchGaveUp = true
+    stopWorking()
     setStatus('Completion watch unavailable')
     return null
   }
@@ -154,6 +155,7 @@ function ensureWatchPort() {
 function giveUpWatch(text) {
   if (watchGaveUp) return
   watchGaveUp = true
+  stopWorking()
   const port = watchPort
   watchPort = null
   try {
@@ -379,14 +381,51 @@ async function sendCapture(capture, node) {
   node.dataset.sent = 'true'
   const tag = node.querySelector('.sent-tag')
   tag.hidden = false
-  tag.dataset.state = 'sent'
+  const watched = Boolean(reply.taskId && reply.runId)
+  if (watched) showWorking(tag)
+  else tag.dataset.state = 'sent'
+  // The locked form is noise once it's sent; the head carries the status.
+  node.dataset.open = 'false'
+  node.querySelector('.catch-head').setAttribute('aria-expanded', 'false')
   tag.title = `task ${reply.taskId ?? '?'} · dispatch ${reply.dispatchId ?? '?'}`
   button.textContent = 'Sent'
   button.title = reply.taskId ? 'Waiting for the worker to finish' : ''
   if (reply.target) destination = reply.target
   setStatus(`Dispatched to ${reply.agent}`, 'good')
-  if (reply.taskId && reply.runId) postWatch()
+  if (watched) postWatch()
   return true
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg'
+
+function showWorking(tag) {
+  const svg = document.createElementNS(SVG_NS, 'svg')
+  svg.setAttribute('class', 'loop')
+  svg.setAttribute('viewBox', '0 0 12 12')
+  svg.setAttribute('aria-hidden', 'true')
+  const track = document.createElementNS(SVG_NS, 'circle')
+  track.setAttribute('class', 'loop-track')
+  const arc = document.createElementNS(SVG_NS, 'circle')
+  arc.setAttribute('class', 'loop-arc')
+  for (const ring of [track, arc]) {
+    ring.setAttribute('cx', '6')
+    ring.setAttribute('cy', '6')
+    ring.setAttribute('r', '4.5')
+    svg.appendChild(ring)
+  }
+  const label = document.createElement('span')
+  label.className = 'loop-label'
+  label.textContent = 'working'
+  tag.replaceChildren(svg, label)
+  tag.dataset.state = 'working'
+}
+
+// Without a watch nothing will ever stop the loader, so fall back to a static tag.
+function stopWorking() {
+  for (const tag of listEl.querySelectorAll(".sent-tag[data-state='working']")) {
+    tag.textContent = 'sent'
+    tag.dataset.state = 'sent'
+  }
 }
 
 async function activeTab() {
