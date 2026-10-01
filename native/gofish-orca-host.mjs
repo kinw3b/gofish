@@ -18,6 +18,8 @@ function log(line) {
   }
 }
 
+log(`BOOT argv=${JSON.stringify(process.argv.slice(1))} node=${process.version}`)
+
 function orca(args, timeoutMs = 120000) {
   return new Promise((resolve) => {
     execFile(ORCA, args, { timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
@@ -218,4 +220,10 @@ process.stdin.on('data', (chunk) => {
   }
 })
 
-process.stdin.on('end', () => process.exit(0))
+// Why: chrome.runtime.sendNativeMessage closes stdin as soon as it has written
+// the request, which lands long before the orca call it triggered resolves.
+// Exiting on `end` killed the reply in flight and Chrome reported "Native host
+// has exited".
+process.stdin.on('end', () => {
+  pending.then(() => process.exit(0)).catch(() => process.exit(0))
+})
