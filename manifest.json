@@ -1,13 +1,15 @@
 {
   "manifest_version": 3,
   "name": "GoFish",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1Iku/L6o4EMRjjljlKHoNKrJ+vqLSW+1/2SWPax5xOMRdMjtar5CEwfYqIvTd2Tjj163QIYCHXxcMPwRmV6sD01onbRJAH+a/zM4VsiHDkDszEQJwGARcbuVl0ZDXdhHXnm9B51tjy7SZpa6zfOMJInlzM0Qr+XqWMMbbocwMAG3UayoBCvfrgJ21q1rZhjaDM6aLuHmGDWbJW2t8j7SKfJnIFWtJ3YD6PhmfpGVJtnmWDWkvDFiBS96c6T3HJqPuUFBOvz96DDdD+tUVf2cmoeOZQ/ZAr+X4RIIegCbGNJc/Mn64HMccWbEonQjNDa/sE+mQlA+E6klvRbuaXqWUwIDAQAB",
   "version": "1.0.0",
   "description": "Cast into any page, hook an element, and send Orca's exact Target context back to your chat.",
   "permissions": [
     "scripting",
     "sidePanel",
     "tabs",
-    "storage"
+    "storage",
+    "nativeMessaging"
   ],
   "host_permissions": [
     "http://*/*",

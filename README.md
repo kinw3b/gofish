@@ -22,7 +22,36 @@ paste is byte-identical to what Orca's own browser produces.
   the list. **Esc** in the page, or **Reel in**, disarms.
 - Open a catch for its screenshot, an intent (fix / change / question / approve), a note, and
   `Text` (Orca's grab format), `Markdown` (one Design Feedback block), `Image` (cropped PNG).
-- **Copy all** — every catch as one `## Design Feedback` markdown block, the same thing Orca's
+- **Copy all** — every catch as one `## Send to Orca
+
+**Send** dispatches the catch as a supervised Orca worker in the worktree you are already working
+in, instead of pasting text at you. It resolves the conversation you have open in Orca, binds an
+orchestration Run to that terminal as coordinator, and starts a worker with `worker-start`. The
+worker's `worker_done` report lands back in that same conversation, so the agent you are talking
+to sees the result.
+
+The task spec follows Orca's task-spec contract (Target, Change, Constraints, Ownership,
+Observable acceptance) and carries the Design Feedback markdown underneath as evidence. An
+`approve` catch dispatches nothing; there is no work in it.
+
+The header row shows exactly where a Send will go: worktree, conversation, agent. Click it to
+re-resolve. It follows your active Orca tab, so check it before sending a stack.
+
+### Installing the bridge
+
+A browser extension cannot open Orca's unix runtime socket or spawn the CLI, so Send goes through
+a native messaging host:
+
+```sh
+bash native/install.sh
+```
+
+It writes a wrapper with absolute paths to `node` and `orca` (Chrome gives native hosts a minimal
+PATH) and registers it with every Chrome, Chromium and Brave profile on the machine. Restart the
+browser afterwards. Until it is installed, Send reports `Bridge not installed` and the copy
+buttons work as before.
+
+## Design Feedback` markdown block, the same thing Orca's
   annotation tray sends to a chat.
 
 ## What's captured
@@ -31,6 +60,35 @@ Selector, readable + full DOM path, stable classes, React component stack and so
 (`_debugSource`, dev builds), accessibility name/role, text snippet, nearby text and siblings,
 curated computed styles, bounds, and a script-stripped HTML snippet — under Orca's same budgets,
 with its same secret redaction and URL sanitizing.
+
+## Send to Orca
+
+**Send** dispatches the catch as a supervised Orca worker in the worktree you are already working
+in, instead of pasting text at you. It resolves the conversation you have open in Orca, binds an
+orchestration Run to that terminal as coordinator, and starts a worker with `worker-start`. The
+worker's `worker_done` report lands back in that same conversation, so the agent you are talking
+to sees the result.
+
+The task spec follows Orca's task-spec contract (Target, Change, Constraints, Ownership,
+Observable acceptance) and carries the Design Feedback markdown underneath as evidence. An
+`approve` catch dispatches nothing; there is no work in it.
+
+The header row shows exactly where a Send will go: worktree, conversation, agent. Click it to
+re-resolve. It follows your active Orca tab, so check it before sending a stack.
+
+### Installing the bridge
+
+A browser extension cannot open Orca's unix runtime socket or spawn the CLI, so Send goes through
+a native messaging host:
+
+```sh
+bash native/install.sh
+```
+
+It writes a wrapper with absolute paths to `node` and `orca` (Chrome gives native hosts a minimal
+PATH) and registers it with every Chrome, Chromium and Brave profile on the machine. Restart the
+browser afterwards. Until it is installed, Send reports `Bridge not installed` and the copy
+buttons work as before.
 
 ## Design
 

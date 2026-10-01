@@ -27,6 +27,11 @@
 
       <button id="cast" class="cast" type="button">Cast</button>
 
+      <button id="destination" class="destination" type="button" title="Where Send dispatches">
+        <span class="dot"></span>
+        <span class="destination-text">Checking Orca…</span>
+      </button>
+
       <div class="toggles">
         <label class="toggle">
           <input type="checkbox" id="auto-copy" checked />
@@ -50,6 +55,7 @@
     <footer>
       <span id="status" class="status" role="status" aria-live="polite">Ready</span>
       <div class="foot-actions">
+        <button id="send-all" class="send" type="button">Send all</button>
         <button id="copy-all" type="button">Copy all</button>
         <button id="clear" class="quiet" type="button">Clear</button>
       </div>
@@ -59,6 +65,7 @@
       <article class="catch">
         <button class="catch-head" type="button" aria-expanded="true">
           <span class="idx"></span>
+          <span class="sent-tag" hidden>sent</span>
           <span class="naming">
             <span class="label"></span>
             <span class="selector"></span>
@@ -72,6 +79,7 @@
           <div class="intents"></div>
           <textarea class="note" rows="2" placeholder="What should change?"></textarea>
           <div class="actions">
+            <button class="send" type="button">Send</button>
             <button class="copy-text" type="button">Text</button>
             <button class="copy-md" type="button">Markdown</button>
             <button class="copy-img" type="button" hidden>Image</button>
@@ -82,6 +90,7 @@
     </template>
 
     <script src="content/target-format.js"></script>
+    <script src="orca-task-spec.js"></script>
     <script src="sidepanel.js"></script>
   </body>
 </html>

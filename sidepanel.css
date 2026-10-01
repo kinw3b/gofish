@@ -147,6 +147,45 @@ h1 {
   }
 }
 
+.destination {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: none;
+  font: 400 11px/1.4 var(--font-mono);
+  color: var(--ink-soft);
+  text-align: left;
+}
+
+.destination .dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-soft);
+  opacity: 0.5;
+}
+
+.destination[data-ready='true'] .dot {
+  background: var(--accent);
+  opacity: 1;
+}
+
+.destination[data-ready='false'] {
+  border-style: dashed;
+}
+
+.destination-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .toggles {
   display: flex;
   gap: 6px;
@@ -398,6 +437,46 @@ button {
 
 button:hover {
   border-color: var(--ink-soft);
+}
+
+button.send {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: none;
+  font-weight: 550;
+}
+
+button.send:hover:not(:disabled) {
+  background: var(--accent-wash);
+  border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button:disabled:hover {
+  border-color: var(--line);
+}
+
+.sent-tag {
+  font: 550 10px/1.5 var(--font-mono);
+  color: var(--ink-soft);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 4px;
+  flex: none;
+  margin-top: 1px;
+}
+
+.catch[data-sent='true'] .label,
+.catch[data-sent='true'] .selector {
+  opacity: 0.55;
+}
+
+.catch[data-sent='true'] .idx {
+  color: var(--ink-soft);
 }
 
 button.quiet {

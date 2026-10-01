@@ -1,3 +1,4 @@
 .DS_Store
 .preview.html
 node_modules/
+native/host.sh

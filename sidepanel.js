@@ -1,6 +1,16 @@
 'use strict'
 
 const INTENTS = ['fix', 'change', 'question', 'approve']
+const HOST = 'com.gofish.orca'
+
+let destination = null
+let runId = null
+
+const captureNodes = new Map()
+
+function nodeFor(capture) {
+  return captureNodes.get(capture) ?? null
+}
 
 const captures = []
 let armedTabId = null
@@ -16,6 +26,9 @@ const pageEl = document.getElementById('page')
 const listEl = document.getElementById('list')
 const emptyEl = document.getElementById('empty')
 const template = document.getElementById('capture-template')
+const destinationButton = document.getElementById('destination')
+const destinationText = destinationButton.querySelector('.destination-text')
+const sendAllButton = document.getElementById('send-all')
 
 function setStatus(text, tone) {
   statusEl.textContent = text
@@ -40,6 +53,89 @@ function showHost(url) {
   } catch (error) {
     pageEl.textContent = url
   }
+}
+
+// The native host is the only thing that can reach Orca: an extension can
+// neither open Orca's unix runtime socket nor spawn the CLI.
+async function callHost(message) {
+  try {
+    const reply = await chrome.runtime.sendNativeMessage(HOST, message)
+    return reply ?? { ok: false, reason: 'empty reply from the bridge' }
+  } catch (error) {
+    return { ok: false, reason: 'bridge-missing', detail: String(error?.message ?? error) }
+  }
+}
+
+function showDestination(state, text) {
+  destinationButton.dataset.ready = state
+  destinationText.textContent = text
+}
+
+async function refreshDestination() {
+  showDestination('false', 'Checking Orca…')
+  const reply = await callHost({ cmd: 'resolve' })
+  if (!reply.ok) {
+    destination = null
+    showDestination(
+      'false',
+      reply.reason === 'bridge-missing' ? 'Bridge not installed: run native/install.sh' : reply.reason
+    )
+    return
+  }
+  destination = reply.target
+  const name = destination.worktreeName || destination.worktreePath
+  const agent = destination.agentIdentity ?? 'no agent'
+  showDestination('true', `${name} · ${destination.tabTitle || 'untitled'} · ${agent}`)
+}
+
+destinationButton.addEventListener('click', () => void refreshDestination())
+
+async function sendCapture(capture, node) {
+  if (capture.sent) return true
+  const spec = OrcaTaskSpec.buildTaskSpec(capture)
+  if (!spec) {
+    setStatus('Nothing to dispatch for an approve')
+    return false
+  }
+  const button = node.querySelector('.send')
+  button.disabled = true
+  button.textContent = 'Sending…'
+  setStatus(`Dispatching ${OrcaTaskSpec.buildTaskTitle(capture)}`)
+
+  const reply = await callHost({
+    cmd: 'dispatch',
+    spec,
+    title: OrcaTaskSpec.buildTaskTitle(capture),
+    runId,
+    objective: `GoFish design feedback: ${capture.payload.page.sanitizedUrl}`
+  })
+
+  if (!reply.ok) {
+    button.disabled = false
+    button.textContent = 'Send'
+    setStatus(
+      reply.reason === 'bridge-missing' ? 'Bridge not installed: run native/install.sh' : reply.reason
+    )
+    return false
+  }
+
+  runId = reply.runId
+  void chrome.storage.session.set({ runId })
+  capture.sent = { dispatchId: reply.dispatchId, taskId: reply.taskId, agent: reply.agent }
+  node.dataset.sent = 'true'
+  const tag = node.querySelector('.sent-tag')
+  tag.hidden = false
+  tag.title = `task ${reply.taskId ?? '?'} · dispatch ${reply.dispatchId ?? '?'}`
+  button.textContent = 'Sent'
+  if (reply.target) {
+    destination = reply.target
+    showDestination(
+      'true',
+      `${destination.worktreeName} · ${destination.tabTitle || 'untitled'} · ${reply.agent}`
+    )
+  }
+  setStatus(`Dispatched to ${reply.agent}`, 'good')
+  return true
 }
 
 async function activeTab() {
@@ -180,6 +276,7 @@ function captureLabel(payload) {
 
 function renderCapture(capture) {
   const node = template.content.firstElementChild.cloneNode(true)
+  captureNodes.set(capture, node)
   node.dataset.open = 'true'
   node.classList.add('fresh')
   node.addEventListener('animationend', () => node.classList.remove('fresh'), { once: true })
@@ -195,6 +292,12 @@ function renderCapture(capture) {
     head.setAttribute('aria-expanded', String(open))
   })
 
+  const sendButton = node.querySelector('.send')
+  if (capture.intent === 'approve') sendButton.disabled = true
+  sendButton.addEventListener('click', () => {
+    void sendCapture(capture, node)
+  })
+
   const intents = node.querySelector('.intents')
   for (const intent of INTENTS) {
     const label = document.createElement('label')
@@ -205,6 +308,8 @@ function renderCapture(capture) {
     input.checked = intent === capture.intent
     input.addEventListener('change', () => {
       capture.intent = intent
+      // Approve carries no work, so there is nothing to dispatch.
+      sendButton.disabled = intent === 'approve' || Boolean(capture.sent)
     })
     const span = document.createElement('span')
     span.textContent = intent
@@ -228,6 +333,7 @@ function renderCapture(capture) {
     const index = captures.indexOf(capture)
     if (index !== -1) captures.splice(index, 1)
     if (capture.shot) URL.revokeObjectURL(capture.shot.url)
+    captureNodes.delete(capture)
     node.remove()
     renumber()
     emptyEl.hidden = captures.length > 0
@@ -262,6 +368,26 @@ async function writeImage(capture) {
   }
 }
 
+sendAllButton.addEventListener('click', () => {
+  void (async () => {
+    const pending = captures.filter(
+      (capture) => !capture.sent && capture.intent !== 'approve'
+    )
+    if (pending.length === 0) {
+      setStatus('Nothing left to dispatch')
+      return
+    }
+    let sent = 0
+    for (const capture of pending) {
+      const node = nodeFor(capture)
+      if (!node) continue
+      // Serial: each dispatch spins up a worker terminal in the same worktree.
+      if (await sendCapture(capture, node)) sent += 1
+    }
+    setStatus(`Dispatched ${sent} of ${pending.length}`, sent > 0 ? 'good' : undefined)
+  })()
+})
+
 copyAllButton.addEventListener('click', () => {
   if (captures.length === 0) {
     setStatus('Nothing on the line yet')
@@ -276,6 +402,7 @@ copyAllButton.addEventListener('click', () => {
 clearButton.addEventListener('click', () => {
   for (const capture of captures) if (capture.shot) URL.revokeObjectURL(capture.shot.url)
   captures.length = 0
+  captureNodes.clear()
   for (const node of listEl.querySelectorAll('.catch')) node.remove()
   emptyEl.hidden = false
   setStatus('Ready')
@@ -283,7 +410,17 @@ clearButton.addEventListener('click', () => {
 
 chrome.tabs.onActivated.addListener(() => {
   if (armedTabId !== null) void reelIn()
-  void (async () => showHost((await activeTab())?.url))()
+  void (async () => {
+  showHost((await activeTab())?.url)
+  const stored = await chrome.storage.session.get('runId')
+  runId = stored.runId ?? null
+  await refreshDestination()
+})()
 })
 
-void (async () => showHost((await activeTab())?.url))()
+void (async () => {
+  showHost((await activeTab())?.url)
+  const stored = await chrome.storage.session.get('runId')
+  runId = stored.runId ?? null
+  await refreshDestination()
+})()
