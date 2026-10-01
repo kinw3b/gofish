@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <svg hidden aria-hidden="true">
+      <symbol id="hook" viewBox="0 0 14 18">
+        <path
+          d="M9.4 2.4v8.1a3.9 3.9 0 0 1-7.8 0v-1.3"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+        />
+        <path d="M9.4 2.4 7.7 4.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+      </symbol>
+    </svg>
+
+    <header>
+      <div class="brand">
+        <svg class="mark" width="13" height="17" aria-hidden="true"><use href="#hook" /></svg>
+        <h1>GoFish</h1>
+        <span id="page" class="host"></span>
+      </div>
+
+      <button id="cast" class="cast" type="button">Cast</button>
+
+      <div class="toggles">
+        <label class="toggle">
+          <input type="checkbox" id="auto-copy" checked />
+          <span>Copy on catch</span>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="keep-picking" />
+          <span>Keep casting</span>
+        </label>
+      </div>
+    </header>
+
+    <main id="list" aria-label="Catch">
+      <p class="empty" id="empty">
+        <svg class="mark" width="13" height="17" aria-hidden="true"><use href="#hook" /></svg>
+        Cast, then click anything on the page. The element's selector, React owner, styles and
+        markup come back here.
+      </p>
+    </main>
+
+    <footer>
+      <span id="status" class="status" role="status" aria-live="polite">Ready</span>
+      <div class="foot-actions">
+        <button id="copy-all" type="button">Copy all</button>
+        <button id="clear" class="quiet" type="button">Clear</button>
+      </div>
+    </footer>
+
+    <template id="capture-template">
+      <article class="catch">
+        <button class="catch-head" type="button" aria-expanded="true">
+          <span class="idx"></span>
+          <span class="naming">
+            <span class="label"></span>
+            <span class="selector"></span>
+          </span>
+          <svg class="chev" width="9" height="9" viewBox="0 0 9 9" aria-hidden="true">
+            <path d="M1.5 3 4.5 6l3-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+        <div class="catch-body">
+          <img class="shot" alt="" hidden />
+          <div class="intents"></div>
+          <textarea class="note" rows="2" placeholder="What should change?"></textarea>
+          <div class="actions">
+            <button class="copy-text" type="button">Text</button>
+            <button class="copy-md" type="button">Markdown</button>
+            <button class="copy-img" type="button" hidden>Image</button>
+            <button class="remove quiet" type="button">Remove</button>
+          </div>
+        </div>
+      </article>
+    </template>
+
+    <script src="content/target-format.js"></script>
+    <script src="sidepanel.js"></script>
+  </body>
+</html>
