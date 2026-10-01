@@ -604,7 +604,13 @@ function renderCapture(capture) {
       sendButton.disabled = intent === 'approve'
     })
     const span = document.createElement('span')
-    span.textContent = intent
+    const icon = document.createElementNS(SVG_NS, 'svg')
+    icon.setAttribute('class', 'intent-icon')
+    icon.setAttribute('aria-hidden', 'true')
+    const use = document.createElementNS(SVG_NS, 'use')
+    use.setAttribute('href', `#i-${intent}`)
+    icon.appendChild(use)
+    span.append(icon, intent)
     label.append(input, span)
     intents.appendChild(label)
   }

@@ -16,6 +16,20 @@
         />
         <path d="M9.4 2.4 7.7 4.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
       </symbol>
+      <symbol id="i-fix" viewBox="0 0 16 16">
+        <path d="M10.2 2.3a3.4 3.4 0 0 0-4.3 4.3L2.3 10.2a1.5 1.5 0 0 0 2.1 2.1l3.6-3.6a3.4 3.4 0 0 0 4.3-4.3l-2 2-1.6-.5-.5-1.6z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-change" viewBox="0 0 16 16">
+        <path d="M10.6 2.6a1.6 1.6 0 0 1 2.3 2.3L5.6 12.2l-3 .7.7-3z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-question" viewBox="0 0 16 16">
+        <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4" />
+        <path d="M6.3 6.3a1.8 1.8 0 1 1 2.4 1.7c-.5.2-.7.6-.7 1.1" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+        <circle cx="8" cy="11.3" r=".8" fill="currentColor" />
+      </symbol>
+      <symbol id="i-approve" viewBox="0 0 16 16">
+        <path d="m3 8.4 3.2 3.1L13 4.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
     </svg>
 
     <header>
@@ -24,8 +38,6 @@
         <h1>GoFish</h1>
         <span id="page" class="host"></span>
       </div>
-
-      <button id="cast" class="cast" type="button">Cast</button>
 
       <div class="destination" data-ready="false">
         <span class="dot"></span>
@@ -42,13 +54,17 @@
       <div class="toggles">
         <label class="toggle">
           <input type="checkbox" id="auto-copy" checked />
+          <span class="toggle-dot" aria-hidden="true"></span>
           <span>Copy on catch</span>
         </label>
         <label class="toggle">
           <input type="checkbox" id="keep-picking" />
+          <span class="toggle-dot" aria-hidden="true"></span>
           <span>Keep casting</span>
         </label>
       </div>
+
+      <button id="cast" class="cast" type="button">Cast</button>
     </header>
 
     <main id="list" aria-label="Catch">
