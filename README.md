@@ -24,11 +24,15 @@ paste is byte-identical to what Orca's own browser produces.
   `Text` (Orca's grab format), `Markdown` (one Design Feedback block), `Image` (cropped PNG).
 - **Copy all** — every catch as one `## Send to Orca
 
-**Send** dispatches the catch as a supervised Orca worker in the worktree you are already working
-in, instead of pasting text at you. It resolves the conversation you have open in Orca, binds an
-orchestration Run to that terminal as coordinator, and starts a worker with `worker-start`. The
-worker's `worker_done` report lands back in that same conversation, so the agent you are talking
-to sees the result.
+**Send** dispatches the catch as a supervised Orca worker in the worktree of the conversation you
+pick, instead of pasting text at you. It binds an orchestration Run to that conversation's
+terminal as coordinator and starts a worker with `worker-start`. The worker's `worker_done`
+report lands back in that same conversation, so the agent you are talking to sees the result.
+
+The destination row lists every live agent terminal, most recently active first, and remembers
+your choice. It is a picker rather than a guess on purpose: Orca's `active` worktree selector
+means "the worktree containing the current directory", and this bridge runs with no meaningful
+working directory, so there is no focused conversation for it to detect.
 
 The task spec follows Orca's task-spec contract (Target, Change, Constraints, Ownership,
 Observable acceptance) and carries the Design Feedback markdown underneath as evidence. An
@@ -46,9 +50,12 @@ a native messaging host:
 bash native/install.sh
 ```
 
-It writes a wrapper with absolute paths to `node` and `orca` (Chrome gives native hosts a minimal
-PATH) and registers it with every Chrome, Chromium and Brave profile on the machine. Restart the
-browser afterwards. Until it is installed, Send reports `Bridge not installed` and the copy
+It copies the host into `~/Library/Application Support/GoFish/`, writes a wrapper with absolute
+paths to `node` and `orca` (Chrome gives native hosts a minimal PATH), and registers it with every
+Chrome, Chromium and Brave profile on the machine. The host deliberately does not run from this
+repo: macOS gates `~/Documents`, `~/Desktop` and `~/Downloads` per application, and a browser
+without that grant cannot launch a host living there. It reports this as `Native host has exited`
+with the process never starting. Until it is installed, Send reports `Bridge not installed` and the copy
 buttons work as before.
 
 ## Design Feedback` markdown block, the same thing Orca's
@@ -63,11 +70,15 @@ with its same secret redaction and URL sanitizing.
 
 ## Send to Orca
 
-**Send** dispatches the catch as a supervised Orca worker in the worktree you are already working
-in, instead of pasting text at you. It resolves the conversation you have open in Orca, binds an
-orchestration Run to that terminal as coordinator, and starts a worker with `worker-start`. The
-worker's `worker_done` report lands back in that same conversation, so the agent you are talking
-to sees the result.
+**Send** dispatches the catch as a supervised Orca worker in the worktree of the conversation you
+pick, instead of pasting text at you. It binds an orchestration Run to that conversation's
+terminal as coordinator and starts a worker with `worker-start`. The worker's `worker_done`
+report lands back in that same conversation, so the agent you are talking to sees the result.
+
+The destination row lists every live agent terminal, most recently active first, and remembers
+your choice. It is a picker rather than a guess on purpose: Orca's `active` worktree selector
+means "the worktree containing the current directory", and this bridge runs with no meaningful
+working directory, so there is no focused conversation for it to detect.
 
 The task spec follows Orca's task-spec contract (Target, Change, Constraints, Ownership,
 Observable acceptance) and carries the Design Feedback markdown underneath as evidence. An
@@ -85,9 +96,12 @@ a native messaging host:
 bash native/install.sh
 ```
 
-It writes a wrapper with absolute paths to `node` and `orca` (Chrome gives native hosts a minimal
-PATH) and registers it with every Chrome, Chromium and Brave profile on the machine. Restart the
-browser afterwards. Until it is installed, Send reports `Bridge not installed` and the copy
+It copies the host into `~/Library/Application Support/GoFish/`, writes a wrapper with absolute
+paths to `node` and `orca` (Chrome gives native hosts a minimal PATH), and registers it with every
+Chrome, Chromium and Brave profile on the machine. The host deliberately does not run from this
+repo: macOS gates `~/Documents`, `~/Desktop` and `~/Downloads` per application, and a browser
+without that grant cannot launch a host living there. It reports this as `Native host has exited`
+with the process never starting. Until it is installed, Send reports `Bridge not installed` and the copy
 buttons work as before.
 
 ## Design

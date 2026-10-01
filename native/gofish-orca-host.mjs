@@ -44,55 +44,52 @@ function orca(args, timeoutMs = 120000) {
   })
 }
 
-// The active pane of the active tab of the active worktree: what the user is
-// looking at in Orca right now.
-function readActivePane(layouts) {
-  const layout = Array.isArray(layouts) ? layouts[0] : null
-  const root = layout?.root
-  if (!root) return null
-  const tab = (root.tabs ?? []).find((entry) => entry.tabId === root.activeTabId) ?? root.tabs?.[0]
-  if (!tab) return null
-
-  const leaves = []
-  const walk = (node) => {
-    if (!node) return
-    if (node.type === 'terminal') leaves.push(node)
-    for (const child of node.children ?? node.panes ?? []) walk(child)
-  }
-  walk(tab.panes)
-
-  const pane =
-    leaves.find((leaf) => leaf.leafId === tab.activeLeafId) ??
-    leaves.find((leaf) => leaf.active) ??
-    leaves[0]
-  if (!pane) return null
-  return { pane, tabTitle: tab.title ?? pane.title ?? '', worktreePath: layout.worktreePath }
-}
-
-async function resolveTarget() {
-  const listing = await orca([
-    'terminal', 'list', '--worktree', 'active', '--include-visual-layouts', '--json'
-  ], 20000)
-  if (!listing.ok) return { ok: false, reason: listing.reason }
-
-  const active = readActivePane(listing.result.visualLayouts)
-  if (!active) {
-    return { ok: false, reason: 'No active Orca terminal. Open a conversation in Orca first.' }
-  }
-  const terminal = (listing.result.terminals ?? []).find(
-    (entry) => entry.handle === active.pane.handle
-  )
-  return {
-    ok: true,
-    target: {
-      terminalHandle: active.pane.handle,
-      tabTitle: active.tabTitle.replace(/^[^\w(]+\s*/, ''),
-      worktreePath: active.worktreePath ?? terminal?.worktreePath ?? '',
-      worktreeName: (active.worktreePath ?? '').split('/').filter(Boolean).pop() ?? '',
-      branch: (terminal?.branch ?? '').replace(/^refs\/heads\//, ''),
-      agentIdentity: terminal?.agentIdentity ?? null
+// There is no "the conversation Orca is focused on" to ask for: the CLI's
+// `active` worktree selector is literally path:<cwd>, and this host runs with
+// cwd "/". So list every live agent terminal and let the panel choose; a guess
+// here would dispatch work into whichever agent happened to print last.
+function paneIsActive(layouts, handle) {
+  for (const layout of layouts ?? []) {
+    const root = layout.root
+    const tab = (root?.tabs ?? []).find((entry) => entry.tabId === root.activeTabId)
+    if (!tab) continue
+    const leaves = []
+    const walk = (node) => {
+      if (!node) return
+      if (node.type === 'terminal') leaves.push(node)
+      for (const child of node.children ?? node.panes ?? []) walk(child)
+    }
+    walk(tab.panes)
+    if (leaves.some((leaf) => leaf.handle === handle && (leaf.active || leaf.leafId === tab.activeLeafId))) {
+      return true
     }
   }
+  return false
+}
+
+async function listTargets() {
+  const listing = await orca(['terminal', 'list', '--include-visual-layouts', '--json'], 25000)
+  if (!listing.ok) return { ok: false, reason: listing.reason }
+
+  const layouts = listing.result.visualLayouts
+  const targets = (listing.result.terminals ?? [])
+    .filter((entry) => entry.agentIdentity && entry.connected && entry.writable && !entry.orphaned)
+    .map((entry) => ({
+      terminalHandle: entry.handle,
+      tabTitle: String(entry.title ?? '').replace(/^[^\w(]+\s*/, '').slice(0, 70),
+      worktreePath: entry.worktreePath ?? '',
+      worktreeName: (entry.worktreePath ?? '').split('/').filter(Boolean).pop() ?? '',
+      branch: String(entry.branch ?? '').replace(/^refs\/heads\//, ''),
+      agentIdentity: entry.agentIdentity,
+      lastOutputAt: entry.lastOutputAt ?? 0,
+      foreground: paneIsActive(layouts, entry.handle)
+    }))
+    .sort((a, b) => b.lastOutputAt - a.lastOutputAt)
+
+  if (targets.length === 0) {
+    return { ok: false, reason: 'No live agent terminal in Orca. Start one, then refresh.' }
+  }
+  return { ok: true, targets }
 }
 
 // A Run is bound to exactly one coordinator terminal, and the active Orca
@@ -122,8 +119,16 @@ async function ensureRun(runId, objective, coordinatorHandle) {
 }
 
 async function dispatch(message) {
-  const resolved = await resolveTarget()
-  if (!resolved.ok) return resolved
+  const listed = await listTargets()
+  if (!listed.ok) return listed
+
+  const chosen =
+    listed.targets.find((entry) => entry.terminalHandle === message.terminalHandle) ??
+    (message.terminalHandle ? null : listed.targets[0])
+  if (!chosen) {
+    return { ok: false, reason: 'That Orca conversation is gone. Pick another destination.' }
+  }
+  const resolved = { ok: true, target: chosen }
 
   const run = await ensureRun(
     message.runId,
@@ -156,7 +161,12 @@ async function dispatch(message) {
     taskId: result.task?.id ?? result.taskId ?? null,
     dispatchId: result.dispatch?.id ?? result.dispatchId ?? null,
     workerHandle:
-      result.agentTerminalHandle ?? result.worker?.handle ?? result.terminal?.handle ?? null,
+      result.agentTerminalHandle ??
+      result.worker?.agentTerminalHandle ??
+      result.dispatch?.agentTerminalHandle ??
+      result.worker?.handle ??
+      result.terminal?.handle ??
+      null,
     target: resolved.target
   }
 }
@@ -173,7 +183,7 @@ async function handle(message) {
       }
     }
     case 'resolve':
-      return await resolveTarget()
+      return await listTargets()
     case 'dispatch':
       if (!message.spec) return { ok: false, reason: 'dispatch needs a spec' }
       return await dispatch(message)

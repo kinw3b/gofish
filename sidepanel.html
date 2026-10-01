@@ -27,10 +27,12 @@
 
       <button id="cast" class="cast" type="button">Cast</button>
 
-      <button id="destination" class="destination" type="button" title="Where Send dispatches">
+      <div class="destination" data-ready="false">
         <span class="dot"></span>
+        <select id="destination" class="destination-select" hidden aria-label="Send destination"></select>
         <span class="destination-text">Checking Orca…</span>
-      </button>
+        <button id="destination-refresh" class="refresh" type="button" title="Refresh destinations" aria-label="Refresh destinations">&#8635;</button>
+      </div>
 
       <div class="toggles">
         <label class="toggle">

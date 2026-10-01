@@ -26,8 +26,10 @@ const pageEl = document.getElementById('page')
 const listEl = document.getElementById('list')
 const emptyEl = document.getElementById('empty')
 const template = document.getElementById('capture-template')
-const destinationButton = document.getElementById('destination')
-const destinationText = destinationButton.querySelector('.destination-text')
+const destinationRow = document.querySelector('.destination')
+const destinationSelect = document.getElementById('destination')
+const destinationText = destinationRow.querySelector('.destination-text')
+const destinationRefresh = document.getElementById('destination-refresh')
 const sendAllButton = document.getElementById('send-all')
 
 function setStatus(text, tone) {
@@ -77,27 +79,52 @@ function describeBridgeFailure(reply) {
   return detail || 'Bridge unavailable'
 }
 
-function showDestination(state, text) {
-  destinationButton.dataset.ready = state
+function showDestinationError(text) {
+  destinationRow.dataset.ready = 'false'
+  destinationSelect.hidden = true
+  destinationText.hidden = false
   destinationText.textContent = text
 }
 
+function describeTarget(target) {
+  const name = target.worktreeName || target.worktreePath
+  return `${name} · ${target.tabTitle || 'untitled'} · ${target.agentIdentity}`
+}
+
 async function refreshDestination() {
-  showDestination('false', 'Checking Orca…')
+  showDestinationError('Checking Orca…')
   const reply = await callHost({ cmd: 'resolve' })
   if (!reply.ok) {
     destination = null
-    showDestination('false', describeBridgeFailure(reply))
+    showDestinationError(describeBridgeFailure(reply))
     return
   }
-  destination = reply.target
-  const name = destination.worktreeName || destination.worktreePath
-  const agent = destination.agentIdentity ?? 'no agent'
-  showDestination('true', `${name} · ${destination.tabTitle || 'untitled'} · ${agent}`)
+
+  const stored = await chrome.storage.session.get('destinationHandle')
+  destinationSelect.replaceChildren()
+  for (const target of reply.targets) {
+    const option = document.createElement('option')
+    option.value = target.terminalHandle
+    option.textContent = describeTarget(target)
+    destinationSelect.appendChild(option)
+  }
+  // Keep the chosen conversation across refreshes; fall back to the most
+  // recently active one, which is the usual answer.
+  const keep = reply.targets.some((target) => target.terminalHandle === stored.destinationHandle)
+  destinationSelect.value = keep ? stored.destinationHandle : reply.targets[0].terminalHandle
+  destination = reply.targets.find(
+    (target) => target.terminalHandle === destinationSelect.value
+  )
+  destinationRow.dataset.ready = 'true'
+  destinationText.hidden = true
+  destinationSelect.hidden = false
 }
 
-destinationButton.addEventListener('click', () => void refreshDestination())
-destinationButton.title = `Send target. This extension is ${chrome.runtime.id}`
+destinationSelect.addEventListener('change', () => {
+  void chrome.storage.session.set({ destinationHandle: destinationSelect.value })
+})
+destinationRefresh.addEventListener('click', () => void refreshDestination())
+destinationRow.title = `Send destination. This extension is ${chrome.runtime.id}`
 
 async function sendCapture(capture, node) {
   if (capture.sent) return true
@@ -115,6 +142,7 @@ async function sendCapture(capture, node) {
     cmd: 'dispatch',
     spec,
     title: OrcaTaskSpec.buildTaskTitle(capture),
+    terminalHandle: destinationSelect.value || null,
     runId,
     objective: `GoFish design feedback: ${capture.payload.page.sanitizedUrl}`
   })
@@ -134,13 +162,7 @@ async function sendCapture(capture, node) {
   tag.hidden = false
   tag.title = `task ${reply.taskId ?? '?'} · dispatch ${reply.dispatchId ?? '?'}`
   button.textContent = 'Sent'
-  if (reply.target) {
-    destination = reply.target
-    showDestination(
-      'true',
-      `${destination.worktreeName} · ${destination.tabTitle || 'untitled'} · ${reply.agent}`
-    )
-  }
+  if (reply.target) destination = reply.target
   setStatus(`Dispatched to ${reply.agent}`, 'good')
   return true
 }
