@@ -616,8 +616,21 @@ function renderCapture(capture) {
   }
 
   const note = node.querySelector('.note')
+  const submitWithModifier = navigator.userAgent.includes('Mac')
+  node.querySelector('.note-send-hint').textContent = submitWithModifier
+    ? 'cmd + enter'
+    : 'ctrl + enter'
   note.addEventListener('input', (event) => {
     capture.comment = event.target.value
+  })
+  note.addEventListener('keydown', (event) => {
+    // Plain Enter stays a newline. Modifier+Enter sends.
+    if (event.key !== 'Enter' || event.isComposing || event.repeat || event.shiftKey) return
+    const modifier = submitWithModifier ? event.metaKey : event.ctrlKey
+    if (!modifier || event.altKey) return
+    event.preventDefault()
+    if (sendButton.disabled || capture.done || capture.sent) return
+    void sendCapture(capture, node)
   })
   note.addEventListener('paste', (event) => {
     const images = [...(event.clipboardData?.files ?? [])].filter((file) => file.type.startsWith('image/'))
