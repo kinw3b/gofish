@@ -1,3 +1,4 @@
+;(function () {
 'use strict'
 
 // Builds the orchestration Task spec. Orca's task-spec contract wants Target,
@@ -18,7 +19,7 @@ const ACCEPTANCE_BY_INTENT = {
   question: 'A written answer naming the files and lines that implement this. No unrelated edits.'
 }
 
-function describeTarget(payload) {
+function describeSpecTarget(payload) {
   const target = payload.target
   const lines = [`\`${target.selector}\` on ${payload.page.sanitizedUrl}`]
   if (target.sourceFile) lines.push(`Rendered by \`${target.sourceFile}\`.`)
@@ -39,7 +40,7 @@ function buildTaskSpec(capture) {
 
   const note = capture.comment.trim()
   const lines = [
-    `**Target:** ${describeTarget(payload)}`,
+    `**Target:** ${describeSpecTarget(payload)}`,
     '',
     `**Change:** ${change}${note ? ` Specifically: ${note}` : ''}`,
     '',
@@ -64,3 +65,4 @@ function buildTaskTitle(capture) {
 }
 
 globalThis.OrcaTaskSpec = { buildTaskSpec, buildTaskTitle }
+})()

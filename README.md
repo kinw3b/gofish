@@ -52,8 +52,9 @@ bash native/install.sh
 
 It copies the host into `~/Library/Application Support/GoFish/`, writes a wrapper with absolute
 paths to `node` and `orca` (Chrome gives native hosts a minimal PATH), and registers it with every
-Chrome, Chromium and Brave profile on the machine. The host deliberately does not run from this
-repo: macOS gates `~/Documents`, `~/Desktop` and `~/Downloads` per application, and a browser
+Chrome, Chromium and Brave profile on the machine. Because the host is **copied**, re-run
+`install.sh` after every `git pull` that touches `native/`: the panel detects the mismatch and
+says so rather than failing strangely. The host deliberately does not run from this repo: macOS gates `~/Documents`, `~/Desktop` and `~/Downloads` per application, and a browser
 without that grant cannot launch a host living there. It reports this as `Native host has exited`
 with the process never starting. Until it is installed, Send reports `Bridge not installed` and the copy
 buttons work as before.
@@ -98,8 +99,9 @@ bash native/install.sh
 
 It copies the host into `~/Library/Application Support/GoFish/`, writes a wrapper with absolute
 paths to `node` and `orca` (Chrome gives native hosts a minimal PATH), and registers it with every
-Chrome, Chromium and Brave profile on the machine. The host deliberately does not run from this
-repo: macOS gates `~/Documents`, `~/Desktop` and `~/Downloads` per application, and a browser
+Chrome, Chromium and Brave profile on the machine. Because the host is **copied**, re-run
+`install.sh` after every `git pull` that touches `native/`: the panel detects the mismatch and
+says so rather than failing strangely. The host deliberately does not run from this repo: macOS gates `~/Documents`, `~/Desktop` and `~/Downloads` per application, and a browser
 without that grant cannot launch a host living there. It reports this as `Native host has exited`
 with the process never starting. Until it is installed, Send reports `Bridge not installed` and the copy
 buttons work as before.

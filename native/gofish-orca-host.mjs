@@ -6,7 +6,10 @@ import { appendFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-const HOST_VERSION = '1.0.0'
+const HOST_VERSION = '1.1.0'
+// Bumped whenever a reply shape changes. install.sh copies this file out of the
+// repo, so a pulled repo and an installed bridge drift apart silently otherwise.
+const PROTOCOL = 2
 const ORCA = process.env.GOFISH_ORCA_BIN || 'orca'
 const LOG = join(homedir(), 'Library', 'Logs', 'gofish-orca-host.log')
 
@@ -221,10 +224,15 @@ process.stdin.on('data', (chunk) => {
     // Serialize: concurrent run-create calls would race into duplicate Runs.
     pending = pending.then(async () => {
       try {
-        write({ id: message.id, ...(await handle(message)) })
+        write({ id: message.id, protocol: PROTOCOL, ...(await handle(message)) })
       } catch (error) {
         log(`ERROR ${error?.stack ?? error}`)
-        write({ id: message.id, ok: false, reason: String(error?.message ?? error) })
+        write({
+          id: message.id,
+          protocol: PROTOCOL,
+          ok: false,
+          reason: String(error?.message ?? error)
+        })
       }
     })
   }

@@ -2,6 +2,7 @@
 
 const INTENTS = ['fix', 'change', 'question', 'approve']
 const HOST = 'com.gofish.orca'
+const PROTOCOL = 2
 
 let destination = null
 let runId = null
@@ -62,7 +63,13 @@ function showHost(url) {
 async function callHost(message) {
   try {
     const reply = await chrome.runtime.sendNativeMessage(HOST, message)
-    return reply ?? { ok: false, reason: 'empty reply from the bridge' }
+    if (!reply) return { ok: false, reason: 'empty reply from the bridge' }
+    // install.sh copies the host out of the repo, so pulling the repo leaves an
+    // older bridge installed. Say that instead of failing on a changed shape.
+    if (reply.protocol !== PROTOCOL) {
+      return { ok: false, reason: 'Bridge is out of date: run native/install.sh again' }
+    }
+    return reply
   } catch (error) {
     return { ok: false, reason: 'bridge-missing', detail: String(error?.message ?? error) }
   }
@@ -87,6 +94,7 @@ function showDestinationError(text) {
 }
 
 function describeTarget(target) {
+  if (!target) return 'unknown destination'
   const name = target.worktreeName || target.worktreePath
   return `${name} · ${target.tabTitle || 'untitled'} · ${target.agentIdentity}`
 }
