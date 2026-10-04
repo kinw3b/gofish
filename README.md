@@ -1,8 +1,8 @@
 # GoFish
 
 Orca's browser **Target** tool, extracted into a Chrome/Brave side panel. Cast into the page on
-your centre monitor, hook an element, and the context lands on the clipboard ready for an Orca
-chat on the right.
+your centre monitor, hook an element, and the context lands in the panel. Copy it yourself when
+you want it on the clipboard for an Orca chat on the right.
 
 The extractors are a direct port of `src/main/browser/grab-guest-*.ts`, and the clipboard formats
 match `formatGrabPayloadAsText` and `formatBrowserAnnotationsAsMarkdown` exactly — so what you
@@ -18,8 +18,8 @@ paste is byte-identical to what Orca's own browser produces.
 
 - **Cast** — arms the picker on the active tab. Hover outlines, click hooks it, and the picker
   reels itself in after one catch. Tick **Keep casting** to stay armed for a run.
-- Each catch copies the element's context as text (toggle with **Copy on catch**) and lands in
-  the list. **Esc** in the page, or **Reel in**, disarms.
+- Each catch lands in the list. It does not touch the clipboard unless **Copy on catch** is on.
+  **Esc** in the page, or **Reel in**, disarms.
 - Open a catch for its screenshot, an intent (fix / change / question / approve), a note, and
   `Text` (Orca's grab format), `Markdown` (one Design Feedback block), `Image` (cropped PNG).
 - **Copy all** — every catch as one `## Design Feedback` markdown block, the same thing Orca's

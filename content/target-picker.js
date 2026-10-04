@@ -585,7 +585,7 @@
   var hoverLabel = null
   var currentEl = null
   var armed = false
-  var autoCopy = true
+  var autoCopy = false
   var oneShot = true
 
   var HOST_ID = '__orca-target-host'
@@ -722,7 +722,7 @@
   }
 
   function arm(options) {
-    autoCopy = !options || options.autoCopy !== false
+    autoCopy = !!(options && options.autoCopy === true)
     oneShot = !options || options.keepPicking !== true
     if (armed) cleanup()
     buildOverlay()

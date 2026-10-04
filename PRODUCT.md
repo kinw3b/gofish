@@ -5,14 +5,14 @@
 ## Product purpose
 
 Orca's browser Target tool, pulled out of Orca and into Chrome/Brave as a side panel. Cast into
-the page, hook an element, and the context an agent needs lands on the clipboard in Orca's own
-format. It exists because Orca's embedded browser costs screen real estate the portrait monitor
-doesn't have.
+the page, hook an element, and the context an agent needs lands in the panel in Orca's own
+format. Copy is a later choice, not part of the cast. It exists because Orca's embedded browser
+costs screen real estate the portrait monitor doesn't have.
 
 ## Users
 
 One person: a design-engineer running Orca on a right-hand monitor, the browser on a centre
-monitor, reviewing a localhost UI. Uses the panel in three-second bursts — cast, click, paste —
+monitor, reviewing a localhost UI. Uses the panel in three-second bursts — cast, click, send —
 dozens of times an hour. Not a dashboard to sit in.
 
 ## Scene
