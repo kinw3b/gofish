@@ -62,7 +62,7 @@ function setStatus(text, tone) {
 function setArmed(tabId) {
   armedTabId = tabId
   castButton.dataset.armed = tabId === null ? 'false' : 'true'
-  castButton.textContent = tabId === null ? 'Cast' : 'Reel in (Esc)'
+  castButton.querySelector('.cast-label').textContent = tabId === null ? 'Cast Target' : 'Reel in (Esc)'
 }
 
 function showHost(url) {

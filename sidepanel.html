@@ -27,6 +27,11 @@
         <path d="M6.3 6.3a1.8 1.8 0 1 1 2.4 1.7c-.5.2-.7.6-.7 1.1" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
         <circle cx="8" cy="11.3" r=".8" fill="currentColor" />
       </symbol>
+      <symbol id="i-target" viewBox="0 0 16 16">
+        <circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.5" />
+        <circle cx="8" cy="8" r="2.4" fill="none" stroke="currentColor" stroke-width="1.5" />
+        <path d="M8 1.2v2.2M8 12.6v2.2M1.2 8h2.2M12.6 8h2.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+      </symbol>
       <symbol id="i-approve" viewBox="0 0 16 16">
         <path d="m3 8.4 3.2 3.1L13 4.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
       </symbol>
@@ -64,7 +69,10 @@
         </label>
       </div>
 
-      <button id="cast" class="cast" type="button">Cast</button>
+      <button id="cast" class="cast" type="button">
+        <svg class="cast-icon" width="15" height="15" aria-hidden="true"><use href="#i-target" /></svg>
+        <span class="cast-label">Cast Target</span>
+      </button>
     </header>
 
     <main id="list" aria-label="Catch">
