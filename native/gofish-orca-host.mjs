@@ -2,12 +2,12 @@
 // Chrome extensions cannot open Orca's unix runtime socket or spawn processes,
 // so this short-lived helper shells out to the `orca` CLI on their behalf.
 import { execFile } from 'node:child_process'
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-const HOST_VERSION = '1.3.0'
+const HOST_VERSION = '1.3.2'
 // Bumped whenever a reply shape changes. install.sh copies this file out of the
 // repo, so a pulled repo and an installed bridge drift apart silently otherwise.
 // `watch` / `settled` are additive on protocol 2: an older host answers
@@ -19,6 +19,18 @@ const LOG = join(homedir(), 'Library', 'Logs', 'gofish-orca-host.log')
 // Outside ~/Documents: TCC would block a browser-launched host from writing there.
 const PASTES = join(homedir(), 'Library', 'Application Support', 'GoFish', 'pastes')
 const IMAGE_EXT = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' }
+// Ids `worker-start --agent` accepts. Orca hides the rest via settings.disabledTuiAgents.
+const WORKER_AGENTS = [
+  'claude',
+  'codex',
+  'cursor',
+  'antigravity',
+  'muse',
+  'zcode',
+  'opencode',
+  'opencode2',
+  'grok'
+]
 
 function log(line) {
   try {
@@ -58,6 +70,32 @@ function orca(args, timeoutMs = 120000) {
 // `active` worktree selector is literally path:<cwd>, and this host runs with
 // cwd "/". So list every live agent terminal and let the panel choose; a guess
 // here would dispatch work into whichever agent happened to print last.
+// `terminal.title` is the agent prompt, which keeps moving. The name on the
+// Orca tab is in the visual layout and is what a refresh should show.
+function tabTitleByHandle(layouts) {
+  const titles = new Map()
+  const walkPanes = (node, tabTitle) => {
+    if (!node) return
+    if (node.type === 'pane-split') {
+      walkPanes(node.first, tabTitle)
+      walkPanes(node.second, tabTitle)
+      return
+    }
+    if (node.handle) titles.set(node.handle, tabTitle || node.title || '')
+  }
+  const walk = (node) => {
+    if (!node) return
+    if (node.type === 'split') {
+      walk(node.first)
+      walk(node.second)
+      return
+    }
+    for (const tab of node.tabs ?? []) walkPanes(tab.panes, tab.title)
+  }
+  for (const layout of layouts ?? []) walk(layout.root)
+  return titles
+}
+
 function paneIsActive(layouts, handle) {
   for (const layout of layouts ?? []) {
     const root = layout.root
@@ -77,16 +115,36 @@ function paneIsActive(layouts, handle) {
   return false
 }
 
+function enabledWorkerAgents() {
+  try {
+    const support = join(homedir(), 'Library', 'Application Support', 'orca')
+    const index = JSON.parse(readFileSync(join(support, 'orca-profile-index.json'), 'utf8'))
+    const profileId = index.activeProfileId || 'local-default'
+    const data = JSON.parse(readFileSync(join(support, 'profiles', profileId, 'orca-data.json'), 'utf8'))
+    const disabled = new Set(
+      (data.settings?.disabledTuiAgents ?? []).filter((id) => typeof id === 'string')
+    )
+    const enabled = WORKER_AGENTS.filter((id) => !disabled.has(id))
+    return enabled.length > 0 ? enabled : WORKER_AGENTS
+  } catch (error) {
+    log(`agents: ${error?.message ?? error}`)
+    return WORKER_AGENTS
+  }
+}
+
 async function listTargets() {
   const listing = await orca(['terminal', 'list', '--include-visual-layouts', '--json'], 25000)
   if (!listing.ok) return { ok: false, reason: listing.reason }
 
   const layouts = listing.result.visualLayouts
+  const tabTitles = tabTitleByHandle(layouts)
   const targets = (listing.result.terminals ?? [])
     .filter((entry) => entry.agentIdentity && entry.connected && entry.writable && !entry.orphaned)
     .map((entry) => ({
       terminalHandle: entry.handle,
-      tabTitle: String(entry.title ?? '').replace(/^[^\w(]+\s*/, '').slice(0, 70),
+      tabTitle: String(tabTitles.get(entry.handle) || entry.title || '')
+        .replace(/^[^\w(]+\s*/, '')
+        .slice(0, 70),
       worktreePath: entry.worktreePath ?? '',
       worktreeName: (entry.worktreePath ?? '').split('/').filter(Boolean).pop() ?? '',
       branch: String(entry.branch ?? '').replace(/^refs\/heads\//, ''),
@@ -265,8 +323,10 @@ async function handle(message) {
         reason: status.ok ? undefined : status.reason
       }
     }
-    case 'resolve':
-      return await listTargets()
+    case 'resolve': {
+      const listed = await listTargets()
+      return { ...listed, agents: enabledWorkerAgents() }
+    }
     case 'dispatch':
       if (!message.spec) return { ok: false, reason: 'dispatch needs a spec' }
       return await dispatch(message)

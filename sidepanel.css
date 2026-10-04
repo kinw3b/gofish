@@ -62,11 +62,11 @@ body {
 /* ---------------------------------------------------------------- header */
 
 header {
-  padding: 13px 14px 12px;
+  padding: 16px 16px 16px;
   border-bottom: 1px solid var(--line);
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
+  gap: 14px;
 }
 
 .brand {
@@ -219,9 +219,8 @@ h1 {
 .agent-row {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 10px;
   min-width: 0;
-  margin-top: -3px;
 }
 
 .agent-label {
@@ -246,7 +245,7 @@ h1 {
   display: flex;
   flex-wrap: wrap;
   min-width: 0;
-  gap: 6px 16px;
+  gap: 8px 18px;
 }
 
 .toggle input {

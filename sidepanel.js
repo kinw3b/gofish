@@ -1,8 +1,7 @@
 'use strict'
 
-// Orca agent launcher ids accepted by `orchestration worker-start --agent`. Which
-// of these is actually enabled lives in Orca settings, not the CLI, so the
-// worker agent is the user's choice rather than the destination terminal's.
+// Fallback until the bridge reports the agents Orca has enabled. The installed
+// host reads settings.disabledTuiAgents and returns that list on resolve.
 const AGENTS = [
   'claude',
   'codex',
@@ -227,6 +226,7 @@ async function refreshDestination() {
   const reply = await callHost({ cmd: 'resolve' })
   if (!reply.ok) {
     destination = null
+    if (Array.isArray(reply.agents)) fillAgents(reply.agents)
     showDestinationError(describeBridgeFailure(reply))
     return
   }
@@ -245,19 +245,36 @@ async function refreshDestination() {
   const keep = reply.targets.some((target) => target.terminalHandle === stored.destinationHandle)
   destinationSelect.value = keep ? stored.destinationHandle : reply.targets[0].terminalHandle
   destination = targetFor(destinationSelect.value)
+  if (Array.isArray(reply.agents)) fillAgents(reply.agents)
   followDestinationAgent()
   destinationRow.dataset.ready = 'true'
   destinationText.hidden = true
   destinationSelect.hidden = false
 }
 
-for (const id of AGENTS) {
-  const option = document.createElement('option')
-  option.value = id
-  option.textContent = id
-  agentSelect.appendChild(option)
+let knownAgents = [...AGENTS]
+
+function fillAgents(ids) {
+  const next = (Array.isArray(ids) ? ids : []).filter((id) => AGENTS.includes(id))
+  const list = next.length > 0 ? next : knownAgents
+  knownAgents = list
+  const current = agentSelect.value
+  agentSelect.replaceChildren()
+  for (const id of list) {
+    const option = document.createElement('option')
+    option.value = id
+    option.textContent = id
+    agentSelect.appendChild(option)
+  }
+  if (list.includes(current)) agentSelect.value = current
+  else if (destination?.agentIdentity && list.includes(destination.agentIdentity) && !agentPinned) {
+    agentSelect.value = destination.agentIdentity
+  } else {
+    agentSelect.value = list[0]
+  }
 }
-agentSelect.value = 'claude'
+
+fillAgents(AGENTS)
 
 // An explicit pick sticks; otherwise the agent follows whichever conversation
 // is selected, which is right until the user says otherwise.
@@ -265,7 +282,7 @@ let agentPinned = false
 
 async function restoreAgent() {
   const stored = await chrome.storage.session.get('agent')
-  if (stored.agent && AGENTS.includes(stored.agent)) {
+  if (stored.agent && knownAgents.includes(stored.agent)) {
     agentSelect.value = stored.agent
     agentPinned = true
   }
@@ -278,7 +295,7 @@ function targetFor(handle) {
 function followDestinationAgent() {
   if (agentPinned) return
   const identity = destination?.agentIdentity
-  if (identity && AGENTS.includes(identity)) agentSelect.value = identity
+  if (identity && knownAgents.includes(identity)) agentSelect.value = identity
 }
 
 agentSelect.addEventListener('change', () => {
