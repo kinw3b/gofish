@@ -44,6 +44,12 @@ the destination explicitly and `install.sh` bakes absolute paths into the wrappe
 its `coordinator_handle` matches the resolved destination; otherwise it creates one. Changing the
 destination mid-stack creates a second Run, which is correct.
 
+**Do not forward pane identity to `orca`.** If Chrome was launched from an Orca pane, the native
+host inherits `ORCA_TERMINAL_HANDLE`, `ORCA_PANE_KEY`, and `ORCA_AGENT_LAUNCH_TOKEN`. Orca then
+attests the CLI as that pane and refuses `--from` for the conversation the panel picked
+(`attested as term_A and cannot act as term_B`). `callerEnv()` strips those (and the session id)
+before every `execFile`. An unattested local CLI is allowed to name the coordinator with `--from`.
+
 **Which agent launchers are enabled is not discoverable from the CLI.** It lives in Orca's settings.
 `AGENTS` in `sidepanel.js` is the static list from `worker-start --help`; the user picks.
 

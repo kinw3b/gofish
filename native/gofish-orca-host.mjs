@@ -7,7 +7,7 @@ import { randomBytes } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-const HOST_VERSION = '1.3.2'
+const HOST_VERSION = '1.3.3'
 // Bumped whenever a reply shape changes. install.sh copies this file out of the
 // repo, so a pulled repo and an installed bridge drift apart silently otherwise.
 // `watch` / `settled` are additive on protocol 2: an older host answers
@@ -40,29 +40,64 @@ function log(line) {
   }
 }
 
-log(`BOOT argv=${JSON.stringify(process.argv.slice(1))} node=${process.version}`)
+log(`BOOT argv=${JSON.stringify(process.argv.slice(1))} node=${process.version} host=${HOST_VERSION}`)
+
+// A pane injects these into every child. Chrome keeps them if it was launched
+// from that pane, and the native host inherits them. Orca then attests this
+// CLI as that pane and refuses --from for any other conversation
+// ("attested as term_A and cannot act as term_B"). GoFish is an external
+// dispatcher: the panel names the coordinator with --from, so the CLI must
+// not carry a pane's identity. Names only — never log the values.
+const CALLER_IDENTITY_ENV = [
+  'ORCA_TERMINAL_HANDLE',
+  'ORCA_PANE_KEY',
+  'ORCA_AGENT_LAUNCH_TOKEN',
+  'ORCA_AGENT_SESSION_ID',
+  'ORCA_STRUCTURED_SESSION',
+  'ORCA_AGENT_PANE',
+  'ORCA_AGENT_LAUNCH',
+  'ORCA_ORCHESTRATION_COMPATIBILITY_HOST_KIND',
+  'ORCA_ORCHESTRATION_COMPATIBILITY_HOST_ID',
+  'ORCA_ORCHESTRATION_COMPATIBILITY_HOST_INCARNATION',
+  'ORCA_ORCHESTRATION_COMPATIBILITY_ATTACHMENT'
+]
+
+function callerEnv() {
+  const env = { ...process.env }
+  for (const key of CALLER_IDENTITY_ENV) delete env[key]
+  return env
+}
+
+const inheritedIdentity = CALLER_IDENTITY_ENV.filter((key) => process.env[key])
+if (inheritedIdentity.length > 0) {
+  log(`not forwarding caller identity: ${inheritedIdentity.join(',')}`)
+}
 
 function orca(args, timeoutMs = 120000) {
   return new Promise((resolve) => {
-    execFile(ORCA, args, { timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
-      const text = String(stdout || '')
-      let parsed = null
-      try {
-        parsed = JSON.parse(text)
-      } catch (parseError) {
-        parsed = null
-      }
-      if (parsed && parsed.ok === true) {
-        resolve({ ok: true, result: parsed.result })
-        return
-      }
-      const reason =
-        (parsed && (parsed.error?.message || parsed.error || parsed.message)) ||
-        String(stderr || '').trim().split('\n').slice(-3).join(' ') ||
-        (error ? error.message : 'orca returned no parsable result')
-      log(`FAIL ${args[0]} ${args[1] ?? ''}: ${reason}`)
-      resolve({ ok: false, reason: String(reason).slice(0, 600), raw: parsed })
-    })
+    execFile(
+      ORCA,
+      args,
+      { timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024, env: callerEnv() },
+      (error, stdout, stderr) => {
+        const text = String(stdout || '')
+        let parsed = null
+        try {
+          parsed = JSON.parse(text)
+        } catch (parseError) {
+          parsed = null
+        }
+        if (parsed && parsed.ok === true) {
+          resolve({ ok: true, result: parsed.result })
+          return
+        }
+        const reason =
+          (parsed && (parsed.error?.message || parsed.error || parsed.message)) ||
+          String(stderr || '').trim().split('\n').slice(-3).join(' ') ||
+          (error ? error.message : 'orca returned no parsable result')
+        log(`FAIL ${args[0]} ${args[1] ?? ''}: ${reason}`)
+        resolve({ ok: false, reason: String(reason).slice(0, 600), raw: parsed })
+      })
   })
 }
 
