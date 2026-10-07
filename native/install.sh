@@ -14,12 +14,30 @@ if [ -z "$NODE_BIN" ]; then
 	exit 1
 fi
 
-ORCA_BIN="${ORCA_BIN:-$(command -v orca || true)}"
-if [ -z "$ORCA_BIN" ] && [ -x "$HOME/.local/bin/orca" ]; then
-	ORCA_BIN="$HOME/.local/bin/orca"
+# The /usr/local/bin/orca symlink can be created root-only (mode 0700), and the
+# CLI then fails with "Unable to determine Orca.app path from symlink". So each
+# candidate must actually run, and the copy bundled in Orca.app is tried first.
+orca_works() { [ -n "$1" ] && "$1" --help >/dev/null 2>&1; }
+
+if [ -n "${ORCA_BIN:-}" ]; then
+	if ! orca_works "$ORCA_BIN"; then
+		echo "ORCA_BIN=$ORCA_BIN does not run." >&2
+		exit 1
+	fi
+else
+	for candidate in \
+		"/Applications/Orca.app/Contents/Resources/bin/orca" \
+		"$HOME/Applications/Orca.app/Contents/Resources/bin/orca" \
+		"$(command -v orca || true)" \
+		"$HOME/.local/bin/orca"; do
+		if orca_works "$candidate"; then
+			ORCA_BIN="$candidate"
+			break
+		fi
+	done
 fi
-if [ -z "$ORCA_BIN" ]; then
-	echo "orca CLI not found. Run: ORCA_BIN=/path/to/orca $0" >&2
+if [ -z "${ORCA_BIN:-}" ]; then
+	echo "No working orca CLI found. Run: ORCA_BIN=/path/to/orca $0" >&2
 	exit 1
 fi
 
