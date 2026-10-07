@@ -1,13 +1,13 @@
 // GoFish native messaging host: the only thing that can reach Orca.
 // Chrome extensions cannot open Orca's unix runtime socket or spawn processes,
 // so this short-lived helper shells out to the `orca` CLI on their behalf.
-import { execFile } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-const HOST_VERSION = '1.3.3'
+const HOST_VERSION = '1.3.4'
 // Bumped whenever a reply shape changes. install.sh copies this file out of the
 // repo, so a pulled repo and an installed bridge drift apart silently otherwise.
 // `watch` / `settled` are additive on protocol 2: an older host answers
@@ -150,21 +150,51 @@ function paneIsActive(layouts, handle) {
   return false
 }
 
+// Orca's live settings live in profile-state.db (the `settings` document row).
+// orca-data.json is only a legacy export that Orca stops refreshing, so reading
+// it reports agents as disabled when they are enabled. Read the DB first.
+function disabledAgentsFromSettings(settings) {
+  return new Set((settings?.disabledTuiAgents ?? []).filter((id) => typeof id === 'string'))
+}
+
+function readLiveSettings(profileDir) {
+  const dbPath = join(profileDir, 'profile-state.db')
+  const out = execFileSync(
+    'sqlite3',
+    ['-readonly', dbPath, "select payload from profile_state_documents where domain = 'settings'"],
+    { encoding: 'utf8', timeout: 3000 }
+  ).trim()
+  if (!out) throw new Error('no settings row in profile-state.db')
+  return JSON.parse(out)
+}
+
 function enabledWorkerAgents() {
+  const support = join(homedir(), 'Library', 'Application Support', 'orca')
+  let profileId = 'local-default'
   try {
-    const support = join(homedir(), 'Library', 'Application Support', 'orca')
     const index = JSON.parse(readFileSync(join(support, 'orca-profile-index.json'), 'utf8'))
-    const profileId = index.activeProfileId || 'local-default'
-    const data = JSON.parse(readFileSync(join(support, 'profiles', profileId, 'orca-data.json'), 'utf8'))
-    const disabled = new Set(
-      (data.settings?.disabledTuiAgents ?? []).filter((id) => typeof id === 'string')
-    )
-    const enabled = WORKER_AGENTS.filter((id) => !disabled.has(id))
-    return enabled.length > 0 ? enabled : WORKER_AGENTS
+    profileId = index.activeProfileId || profileId
   } catch (error) {
-    log(`agents: ${error?.message ?? error}`)
-    return WORKER_AGENTS
+    log(`agents: profile index: ${error?.message ?? error}`)
   }
+  const profileDir = join(support, 'profiles', profileId)
+
+  let settings = null
+  try {
+    settings = readLiveSettings(profileDir)
+  } catch (error) {
+    log(`agents: live settings unreadable, falling back to orca-data.json: ${error?.message ?? error}`)
+    try {
+      settings = JSON.parse(readFileSync(join(profileDir, 'orca-data.json'), 'utf8')).settings
+    } catch (fallbackError) {
+      log(`agents: ${fallbackError?.message ?? fallbackError}`)
+      return WORKER_AGENTS
+    }
+  }
+
+  const disabled = disabledAgentsFromSettings(settings)
+  const enabled = WORKER_AGENTS.filter((id) => !disabled.has(id))
+  return enabled.length > 0 ? enabled : WORKER_AGENTS
 }
 
 async function listTargets() {
