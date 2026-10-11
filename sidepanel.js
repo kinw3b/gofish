@@ -178,7 +178,17 @@ function postWatch() {
     byRun.set(capture.sent.runId, ids)
   }
   for (const [watchedRun, taskIds] of byRun) {
-    port.postMessage({ cmd: 'watch', id: `watch-${watchedRun}`, runId: watchedRun, taskIds })
+    const dispatches = taskIds.map((taskId) => {
+      const capture = pending.find((entry) => entry.sent.taskId === taskId)
+      return { taskId, dispatchId: capture?.sent.dispatchId ?? null }
+    })
+    port.postMessage({
+      cmd: 'watch',
+      id: `watch-${watchedRun}`,
+      runId: watchedRun,
+      taskIds,
+      dispatches
+    })
   }
 }
 

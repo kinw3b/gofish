@@ -7,7 +7,7 @@ import { randomBytes } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-const HOST_VERSION = '1.3.4'
+const HOST_VERSION = '1.3.5'
 // Bumped whenever a reply shape changes. install.sh copies this file out of the
 // repo, so a pulled repo and an installed bridge drift apart silently otherwise.
 // `watch` / `settled` are additive on protocol 2: an older host answers
@@ -307,21 +307,30 @@ async function dispatch(message) {
 // Completion is a push the panel cannot get from sendNativeMessage, which
 // closes stdin before a later result exists. `watch` keeps this process alive
 // on a connectNative port and polls task status. `check` is deliberately not
-// used: it would consume the coordinator's inbox.
+// used: it would consume the coordinator's inbox. When a task settles, the
+// host releases that worker's terminal itself. Otherwise the pane stays
+// reclaimable until someone runs worker-release in the coordinator.
 const watches = new Map()
 let watchTimer = null
 let pollFlight = null
 let stopping = false
 
-function armWatch(runId, taskIds) {
+function armWatch(runId, taskIds, dispatches) {
   if (stopping || typeof runId !== 'string' || runId.length === 0) return
   let ids = watches.get(runId)
   if (!ids) {
-    ids = new Set()
+    ids = new Map()
     watches.set(runId, ids)
   }
   for (const id of taskIds ?? []) {
-    if (typeof id === 'string' && id.length > 0) ids.add(id)
+    if (typeof id === 'string' && id.length > 0 && !ids.has(id)) ids.set(id, null)
+  }
+  for (const entry of dispatches ?? []) {
+    const taskId = entry?.taskId
+    const dispatchId = entry?.dispatchId
+    if (typeof taskId !== 'string' || taskId.length === 0) continue
+    if (typeof dispatchId === 'string' && dispatchId.length > 0) ids.set(taskId, dispatchId)
+    else if (!ids.has(taskId)) ids.set(taskId, null)
   }
   if (watchTimer || stopping) return
   void pollWatch()
@@ -340,6 +349,59 @@ function pollWatch() {
   })
 }
 
+function asId(value) {
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+// worker-list pages at 100. Walk until the task's dispatch shows up or the
+// cursor runs out. A missing id is not fatal: settle still reports.
+async function dispatchIdForTask(runId, taskId) {
+  let cursor = null
+  for (let page = 0; page < 10; page += 1) {
+    const args = ['orchestration', 'worker-list', '--run', runId, '--limit', '100', '--json']
+    if (cursor) args.push('--cursor', cursor)
+    const listed = await orca(args, 20000)
+    if (!listed.ok) return null
+    const body = listed.result ?? {}
+    const rows = body.workers ?? body.dispatches ?? body.rows ?? body.items ?? []
+    for (const row of rows) {
+      const rowTask = asId(row.taskId) ?? asId(row.task_id) ?? asId(row.task?.id)
+      if (rowTask !== taskId) continue
+      const found =
+        asId(row.dispatchId) ??
+        asId(row.dispatch_id) ??
+        asId(row.id) ??
+        asId(row.dispatch?.id)
+      if (found) return found
+    }
+    cursor = asId(body.page?.nextCursor) ?? asId(body.nextCursor)
+    if (!cursor) return null
+  }
+  return null
+}
+
+async function releaseWorker(runId, taskId, knownDispatchId) {
+  const dispatchId = asId(knownDispatchId) ?? (await dispatchIdForTask(runId, taskId))
+  if (!dispatchId) {
+    log(`RELEASE skip ${taskId}: no dispatch id`)
+    return
+  }
+  const released = await orca(
+    ['orchestration', 'worker-release', '--dispatch', dispatchId, '--json'],
+    30000
+  )
+  if (!released.ok) {
+    log(`RELEASE failed ${taskId} ${dispatchId}: ${released.reason}`)
+    return
+  }
+  const outcome =
+    released.result?.outcome ??
+    released.result?.terminalState ??
+    released.result?.status ??
+    'ok'
+  log(`RELEASE ${taskId} ${dispatchId} ${outcome}`)
+}
+
 async function runPoll() {
   for (const [runId, ids] of watches) {
     if (stopping) return
@@ -355,8 +417,11 @@ async function runPoll() {
     for (const task of listed.result?.tasks ?? []) {
       if (!ids.has(task.id)) continue
       if (task.status !== 'completed' && task.status !== 'failed') continue
+      const dispatchId = ids.get(task.id)
       ids.delete(task.id)
       log(`SETTLED ${task.id} ${task.status}`)
+      await releaseWorker(runId, task.id, dispatchId)
+      if (stopping) return
       write({ cmd: 'settled', protocol: PROTOCOL, ok: true, taskId: task.id, status: task.status })
     }
   }
@@ -395,12 +460,15 @@ async function handle(message) {
     case 'dispatch':
       if (!message.spec) return { ok: false, reason: 'dispatch needs a spec' }
       return await dispatch(message)
-    case 'watch':
-      if (!message.runId || !Array.isArray(message.taskIds) || message.taskIds.length === 0) {
+    case 'watch': {
+      const dispatches = Array.isArray(message.dispatches) ? message.dispatches : []
+      const taskIds = Array.isArray(message.taskIds) ? message.taskIds : []
+      if (!message.runId || (taskIds.length === 0 && dispatches.length === 0)) {
         return { ok: false, reason: 'watch needs a run and task ids' }
       }
-      armWatch(message.runId, message.taskIds)
+      armWatch(message.runId, taskIds, dispatches)
       return { ok: true, watching: true }
+    }
     case 'saveImage':
       return saveImage(message)
     default:
