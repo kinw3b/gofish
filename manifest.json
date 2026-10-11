@@ -9,7 +9,8 @@
     "sidePanel",
     "tabs",
     "storage",
-    "nativeMessaging"
+    "nativeMessaging",
+    "debugger"
   ],
   "host_permissions": [
     "http://*/*",

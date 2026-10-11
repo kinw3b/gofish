@@ -16,7 +16,7 @@ const AGENTS = [
 
 const INTENTS = ['fix', 'change', 'question', 'approve']
 const HOST = 'com.gofish.orca'
-const PROTOCOL = 2
+const PROTOCOL = 3
 
 let destination = null
 let destinationTargets = []
@@ -48,10 +48,24 @@ const emptyEl = document.getElementById('empty')
 const template = document.getElementById('capture-template')
 const destinationRow = document.querySelector('.destination')
 const destinationSelect = document.getElementById('destination')
+const destinationList = document.getElementById('destination-list')
+const destinationValue = destinationSelect.querySelector('.destination-value')
 const destinationText = destinationRow.querySelector('.destination-text')
 const destinationRefresh = document.getElementById('destination-refresh')
 const agentSelect = document.getElementById('agent')
 const sendAllButton = document.getElementById('send-all')
+const deviceButtons = [...document.querySelectorAll('.device')]
+
+// Emulated viewports, driven through the debugger's CDP so media queries and
+// every element (menus included) respond. desktop is the native window: no
+// override, no debugger.
+const DEVICE_SPECS = {
+  tablet: { width: 834, height: 1112, deviceScaleFactor: 2, mobile: true },
+  mobile: { width: 390, height: 844, deviceScaleFactor: 3, mobile: true }
+}
+
+const devices = new Map() // tabId -> device id
+const attachedTabs = new Set()
 
 function setStatus(text, tone) {
   statusEl.textContent = text
@@ -227,11 +241,101 @@ function showDestinationError(text) {
 
 function describeTarget(target) {
   if (!target) return 'unknown destination'
-  const name = target.worktreeName || target.worktreePath
+  const name = target.projectName || target.worktreeName || target.worktreePath
   return `${name} · ${target.tabTitle || 'untitled'} · ${target.agentIdentity}`
 }
 
+// A native <select> cannot render images, and the project icon is the fastest
+// way to tell one destination from another in a narrow panel. Orca stores the
+// icon as a data-URI image, a lucide name, or an emoji. The lucide set is not
+// shipped here, so those fall back to a tinted initial of the project name.
+function projectIcon(target) {
+  const icon = target?.projectIcon
+  if (icon?.type === 'image' && typeof icon.src === 'string' && icon.src) {
+    const img = document.createElement('img')
+    img.className = 'project-icon'
+    img.src = icon.src
+    img.alt = ''
+    return img
+  }
+  const badge = document.createElement('span')
+  badge.className = 'project-icon project-icon-glyph'
+  if (icon?.type === 'emoji' && typeof icon.emoji === 'string' && icon.emoji) {
+    badge.textContent = icon.emoji
+    return badge
+  }
+  const name = target?.projectName || target?.worktreeName || '?'
+  badge.textContent = name.trim().charAt(0).toUpperCase() || '?'
+  if (typeof target?.projectBadgeColor === 'string') badge.style.color = target.projectBadgeColor
+  return badge
+}
+
+function renderDestinationValue() {
+  destinationValue.replaceChildren()
+  if (!destination) return
+  destinationValue.append(projectIcon(destination), document.createTextNode(describeTarget(destination)))
+}
+
+let menuActive = -1
+
+function destinationOptionNodes() {
+  return [...destinationList.children]
+}
+
+function setMenuActive(index) {
+  const options = destinationOptionNodes()
+  if (options.length === 0) return
+  menuActive = (index + options.length) % options.length
+  options.forEach((option, i) => option.classList.toggle('is-active', i === menuActive))
+}
+
+function openDestinationMenu() {
+  destinationList.hidden = false
+  destinationSelect.setAttribute('aria-expanded', 'true')
+  const options = destinationOptionNodes()
+  const current = options.findIndex((option) => option.dataset.handle === destination?.terminalHandle)
+  setMenuActive(current >= 0 ? current : 0)
+}
+
+function closeDestinationMenu() {
+  if (destinationList.hidden) return
+  destinationList.hidden = true
+  destinationSelect.setAttribute('aria-expanded', 'false')
+  for (const option of destinationList.children) option.classList.remove('is-active')
+}
+
+function chooseDestination(handle) {
+  const target = targetFor(handle)
+  if (!target) return
+  destination = target
+  void chrome.storage.session.set({ destinationHandle: handle })
+  renderDestinationValue()
+  for (const option of destinationList.children) {
+    option.setAttribute('aria-selected', String(option.dataset.handle === handle))
+  }
+  followDestinationAgent()
+  closeDestinationMenu()
+}
+
+function buildDestinationMenu() {
+  destinationList.replaceChildren()
+  for (const target of destinationTargets) {
+    const option = document.createElement('li')
+    option.className = 'destination-option'
+    option.dataset.handle = target.terminalHandle
+    option.setAttribute('role', 'option')
+    option.setAttribute('aria-selected', String(target === destination))
+    const text = document.createElement('span')
+    text.className = 'destination-option-text'
+    text.textContent = describeTarget(target)
+    option.append(projectIcon(target), text)
+    option.addEventListener('click', () => chooseDestination(target.terminalHandle))
+    destinationList.appendChild(option)
+  }
+}
+
 async function refreshDestination() {
+  closeDestinationMenu()
   showDestinationError('Checking Orca…')
   const reply = await callHost({ cmd: 'resolve' })
   if (!reply.ok) {
@@ -243,18 +347,12 @@ async function refreshDestination() {
 
   const stored = await chrome.storage.session.get('destinationHandle')
   destinationTargets = reply.targets
-  destinationSelect.replaceChildren()
-  for (const target of reply.targets) {
-    const option = document.createElement('option')
-    option.value = target.terminalHandle
-    option.textContent = describeTarget(target)
-    destinationSelect.appendChild(option)
-  }
   // Keep the chosen conversation across refreshes; fall back to the most
   // recently active one, which is the usual answer.
   const keep = reply.targets.some((target) => target.terminalHandle === stored.destinationHandle)
-  destinationSelect.value = keep ? stored.destinationHandle : reply.targets[0].terminalHandle
-  destination = targetFor(destinationSelect.value)
+  destination = targetFor(keep ? stored.destinationHandle : reply.targets[0].terminalHandle)
+  buildDestinationMenu()
+  renderDestinationValue()
   if (Array.isArray(reply.agents)) fillAgents(reply.agents)
   followDestinationAgent()
   destinationRow.dataset.ready = 'true'
@@ -313,10 +411,33 @@ agentSelect.addEventListener('change', () => {
   void chrome.storage.session.set({ agent: agentSelect.value })
 })
 
-destinationSelect.addEventListener('change', () => {
-  void chrome.storage.session.set({ destinationHandle: destinationSelect.value })
-  destination = targetFor(destinationSelect.value)
-  followDestinationAgent()
+destinationSelect.addEventListener('click', () => {
+  if (destinationList.hidden) openDestinationMenu()
+  else closeDestinationMenu()
+})
+document.addEventListener('click', (event) => {
+  if (!destinationRow.contains(event.target)) closeDestinationMenu()
+})
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    closeDestinationMenu()
+    return
+  }
+  if (destinationList.hidden) return
+  const options = destinationOptionNodes()
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    setMenuActive(menuActive + 1)
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    setMenuActive(menuActive - 1)
+  } else if (event.key === 'Enter') {
+    const option = options[menuActive]
+    if (option) {
+      event.preventDefault()
+      chooseDestination(option.dataset.handle)
+    }
+  }
 })
 destinationRefresh.addEventListener('click', () => void refreshDestination())
 destinationRow.title = `Send destination. This extension is ${chrome.runtime.id}`
@@ -382,7 +503,7 @@ async function sendCapture(capture, node) {
     cmd: 'dispatch',
     spec,
     title: OrcaTaskSpec.buildTaskTitle(capture),
-    terminalHandle: destinationSelect.value || null,
+    terminalHandle: destination?.terminalHandle ?? null,
     agent: agentSelect.value,
     runId,
     objective: `GoFish design feedback: ${capture.payload.page.sanitizedUrl}`
@@ -464,6 +585,83 @@ function pickerOptions() {
   return { autoCopy: autoCopyInput.checked, keepPicking: keepPickingInput.checked }
 }
 
+function reflectDevice(tabId) {
+  const device = devices.get(tabId) ?? 'desktop'
+  for (const button of deviceButtons) {
+    button.setAttribute('aria-pressed', button.dataset.device === device ? 'true' : 'false')
+  }
+}
+
+async function attach(tabId) {
+  if (attachedTabs.has(tabId)) return true
+  try {
+    await chrome.debugger.attach({ tabId }, '1.3')
+    attachedTabs.add(tabId)
+    return true
+  } catch (error) {
+    return false
+  }
+}
+
+async function detach(tabId) {
+  if (!attachedTabs.has(tabId)) return
+  attachedTabs.delete(tabId)
+  await chrome.debugger.detach({ tabId }).catch(() => {})
+}
+
+// Emulation is per debugger session and survives navigation, so the override
+// has to be cleared before the debugger goes away.
+async function applyDevice(tabId, device) {
+  const spec = DEVICE_SPECS[device]
+  if (!spec) {
+    if (attachedTabs.has(tabId)) {
+      await chrome.debugger
+        .sendCommand({ tabId }, 'Emulation.clearDeviceMetricsOverride')
+        .catch(() => {})
+      await detach(tabId)
+    }
+    return true
+  }
+  if (!(await attach(tabId))) return false
+  await chrome.debugger.sendCommand({ tabId }, 'Emulation.setDeviceMetricsOverride', spec)
+  return true
+}
+
+async function setDevice(device) {
+  const tab = await activeTab()
+  if (!tab || !tab.id || !/^(https?|file):/.test(tab.url ?? '')) {
+    setStatus('Open an http or file page first')
+    return
+  }
+  if ((devices.get(tab.id) ?? 'desktop') === device) return
+  if (!(await applyDevice(tab.id, device))) {
+    setStatus('Close DevTools on this tab to preview a device')
+    return
+  }
+  devices.set(tab.id, device)
+  reflectDevice(tab.id)
+  setStatus(device === 'desktop' ? 'Desktop viewport' : `${device} viewport`)
+  // A reload re-runs JS that read the width once at mount. The override
+  // outlives it, so the device sticks.
+  await chrome.tabs.reload(tab.id).catch(() => {})
+}
+
+for (const button of deviceButtons) {
+  button.addEventListener('click', () => void setDevice(button.dataset.device))
+}
+
+// DevTools opening on the tab (or the tab closing) detaches us; fall back to
+// desktop rather than showing a preset that is no longer applied.
+chrome.debugger.onDetach.addListener((source) => {
+  if (source.tabId === undefined) return
+  attachedTabs.delete(source.tabId)
+  if ((devices.get(source.tabId) ?? 'desktop') === 'desktop') return
+  devices.set(source.tabId, 'desktop')
+  void (async () => {
+    if ((await activeTab())?.id === source.tabId) reflectDevice(source.tabId)
+  })()
+})
+
 async function cast() {
   const tab = await activeTab()
   if (!tab || !tab.id || !/^(https?|file):/.test(tab.url ?? '')) {
@@ -524,7 +722,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   if (sender.tab && armedTabId !== null && sender.tab.id !== armedTabId) return
   if (message.type === 'selected') {
     if (!keepPickingInput.checked) setArmed(null)
-    void addCapture(message.payload)
+    void addCapture(message.payload, sender.tab?.id)
   }
   if (message.type === 'cancelled') {
     setArmed(null)
@@ -533,12 +731,37 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   if (message.type === 'error') setStatus('Could not read that element')
 })
 
-async function captureScreenshot(rect) {
+function base64ToBlob(base64, type) {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return new Blob([bytes], { type })
+}
+
+async function captureScreenshot(tabId, target, viewportWidth) {
+  const rect = target.rectViewport
+  // Under device emulation the page is scaled to fit the tab, so a plain tab
+  // capture no longer lines up with the element's CSS rect. The debugger can
+  // clip to the element's page rect instead, which is exact at any zoom.
+  if (tabId !== undefined && attachedTabs.has(tabId) && target.rectPage.width > 0 && target.rectPage.height > 0) {
+    const page = target.rectPage
+    try {
+      const reply = await chrome.debugger.sendCommand({ tabId }, 'Page.captureScreenshot', {
+        format: 'png',
+        captureBeyondViewport: true,
+        clip: { x: page.x, y: page.y, width: page.width, height: page.height, scale: 1 }
+      })
+      const blob = base64ToBlob(reply.data, 'image/png')
+      return { blob, url: URL.createObjectURL(blob) }
+    } catch (error) {
+      // Fall through to the plain tab capture.
+    }
+  }
   try {
     const dataUrl = await chrome.tabs.captureVisibleTab({ format: 'png' })
     const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob())
     // The capture is in device pixels; the rect is in CSS pixels.
-    const scale = rect.viewportWidth > 0 ? bitmap.width / rect.viewportWidth : 1
+    const scale = viewportWidth > 0 ? bitmap.width / viewportWidth : 1
     const x = Math.max(0, Math.round(rect.x * scale))
     const y = Math.max(0, Math.round(rect.y * scale))
     const width = Math.min(bitmap.width - x, Math.round(rect.width * scale))
@@ -553,7 +776,7 @@ async function captureScreenshot(rect) {
   }
 }
 
-async function addCapture(payload) {
+async function addCapture(payload, tabId) {
   const capture = { id: nextId++, payload, intent: 'fix', comment: '', shot: null }
   captures.push(capture)
   emptyEl.hidden = true
@@ -568,13 +791,7 @@ async function addCapture(payload) {
   node.scrollIntoView({ block: 'nearest' })
   setStatus(autoCopyInput.checked ? 'Hooked, copied' : 'Hooked', 'good')
 
-  const shot = await captureScreenshot({
-    x: payload.target.rectViewport.x,
-    y: payload.target.rectViewport.y,
-    width: payload.target.rectViewport.width,
-    height: payload.target.rectViewport.height,
-    viewportWidth: payload.page.viewportWidth
-  })
+  const shot = await captureScreenshot(tabId, payload.target, payload.page.viewportWidth)
   if (!shot) return
   capture.shot = shot
   const image = node.querySelector('.shot')
@@ -753,8 +970,9 @@ clearButton.addEventListener('click', () => {
   setStatus('Ready')
 })
 
-chrome.tabs.onActivated.addListener(() => {
+chrome.tabs.onActivated.addListener(({ tabId }) => {
   if (armedTabId !== null) void reelIn()
+  reflectDevice(tabId)
   void (async () => {
   showHost((await activeTab())?.url)
   const stored = await chrome.storage.session.get('runId')
@@ -763,8 +981,15 @@ chrome.tabs.onActivated.addListener(() => {
 })()
 })
 
+chrome.tabs.onRemoved.addListener((tabId) => {
+  devices.delete(tabId)
+  attachedTabs.delete(tabId)
+})
+
 void (async () => {
-  showHost((await activeTab())?.url)
+  const tab = await activeTab()
+  showHost(tab?.url)
+  reflectDevice(tab?.id)
   const stored = await chrome.storage.session.get('runId')
   runId = stored.runId ?? null
   await restoreAgent()

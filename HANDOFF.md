@@ -21,6 +21,24 @@ what you need to know to keep building it.
 isolated world, so the component stack and `_debugSource` would come back empty. That is the whole
 reason for the two-script bridge.
 
+**Device preview drives the inspector protocol, and needs the `debugger` permission.** The panel's
+three device buttons attach `chrome.debugger` to the tab and send
+`Emulation.setDeviceMetricsOverride` — the same CDP call the DevTools device toolbar uses — so media
+queries, `vw` units and every element (menus included) respond. Consequences worth knowing:
+
+- Chrome shows the yellow "started debugging this browser" bar while a device is active. Desktop
+  clears the override and detaches, which removes the bar.
+- `chrome.debugger.attach` fails if DevTools is already open on that tab; the panel says so. Nothing
+  can share a tab with an open inspector.
+- The override lives in the debugger session and survives navigation, so `setDevice` reloads the tab
+  after applying it (JS that reads the width once at mount needs the reload) without losing the
+  device. `chrome.debugger.onDetach` resets the tab to desktop.
+- Emulation scales the page to fit the tab, so `captureVisibleTab` no longer lines up with the
+  element's CSS rect. `captureScreenshot` switches to `Page.captureScreenshot` with a page-space
+  clip while the debugger is attached, and keeps the old crop path otherwise.
+- `mobile: true` is set but touch emulation is deliberately **not**: touch would turn the mouse into
+  touch events and the picker's `mousemove` highlight would never fire.
+
 **The panel's `<script>`s are classic scripts sharing one global scope.** `orca-task-spec.js` and
 `sidepanel.js` both once declared `describeTarget`, and the panel's version silently won, which
 corrupted the Target line of every dispatched spec. Wrap any new panel module in an IIFE.
@@ -64,8 +82,13 @@ Send still goes through `sendNativeMessage`, which cannot push a later result. A
 the panel opens a `connectNative` port and sends `watch` with the Run id and task ids. The host
 polls `orchestration task-list` and writes a `settled` message when a task is `completed` or
 `failed`. A completed task locks the catch and shows a green **completed** pill. There is no
-manual check-off. Protocol stays 2: an older installed host replies `unknown command watch` and the
-panel says to re-run `install.sh`. Send keeps working either way.
+manual check-off. Protocol is 3: a host older than this repo replies with a mismatched protocol and
+the panel says to re-run `install.sh`. Send keeps working either way. Protocol 3 also added
+`projectName` / `projectIcon` / `projectBadgeColor` to every target, sourced from `orca repo list`
+(keyed by the repo id embedded in `worktreeId`), so the destination menu shows Orca's project name
+and icon instead of the worktree folder name. `projectIcon` is a data-URI image, a lucide name, or
+an emoji; the panel renders images and emoji directly and falls back to a tinted initial for lucide
+names, whose icon set is not shipped here.
 
 ## Testing the layout without the browser
 

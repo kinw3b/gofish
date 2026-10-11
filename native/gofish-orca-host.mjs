@@ -7,12 +7,12 @@ import { randomBytes } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-const HOST_VERSION = '1.3.5'
+const HOST_VERSION = '1.4.0'
 // Bumped whenever a reply shape changes. install.sh copies this file out of the
 // repo, so a pulled repo and an installed bridge drift apart silently otherwise.
-// `watch` / `settled` are additive on protocol 2: an older host answers
-// `unknown command watch` and Send keeps working.
-const PROTOCOL = 2
+// Protocol 3 adds projectName / projectIcon / projectBadgeColor to every target
+// (the panel renders the Orca project, not the worktree folder name).
+const PROTOCOL = 3
 const SETTLE_MS = Number(process.env.GOFISH_SETTLE_MS) || 5000
 const ORCA = process.env.GOFISH_ORCA_BIN || 'orca'
 const LOG = join(homedir(), 'Library', 'Logs', 'gofish-orca-host.log')
@@ -197,26 +197,59 @@ function enabledWorkerAgents() {
   return enabled.length > 0 ? enabled : WORKER_AGENTS
 }
 
+// A terminal carries the repo id inside its worktreeId (`<repoId>::<path>`),
+// but not the project's display name or icon. `repo list` has both, keyed by
+// that same id. The icon is a data URI (image), a lucide name, or an emoji, so
+// the panel can tell two checkouts of the same folder apart at a glance.
+async function repoMetadata() {
+  const listed = await orca(['repo', 'list', '--json'], 20000)
+  const byId = new Map()
+  const byPath = new Map()
+  if (!listed.ok) {
+    log(`repos: ${listed.reason}`)
+    return { byId, byPath }
+  }
+  for (const repo of listed.result.repos ?? []) {
+    const meta = {
+      projectName: String(repo.displayName ?? '').trim(),
+      projectIcon: repo.repoIcon ?? null,
+      projectBadgeColor: typeof repo.badgeColor === 'string' ? repo.badgeColor : null
+    }
+    if (repo.id) byId.set(String(repo.id), meta)
+    if (repo.path) byPath.set(String(repo.path), meta)
+  }
+  return { byId, byPath }
+}
+
 async function listTargets() {
   const listing = await orca(['terminal', 'list', '--include-visual-layouts', '--json'], 25000)
   if (!listing.ok) return { ok: false, reason: listing.reason }
 
+  const repos = await repoMetadata()
   const layouts = listing.result.visualLayouts
   const tabTitles = tabTitleByHandle(layouts)
   const targets = (listing.result.terminals ?? [])
     .filter((entry) => entry.agentIdentity && entry.connected && entry.writable && !entry.orphaned)
-    .map((entry) => ({
-      terminalHandle: entry.handle,
-      tabTitle: String(tabTitles.get(entry.handle) || entry.title || '')
-        .replace(/^[^\w(]+\s*/, '')
-        .slice(0, 70),
-      worktreePath: entry.worktreePath ?? '',
-      worktreeName: (entry.worktreePath ?? '').split('/').filter(Boolean).pop() ?? '',
-      branch: String(entry.branch ?? '').replace(/^refs\/heads\//, ''),
-      agentIdentity: entry.agentIdentity,
-      lastOutputAt: entry.lastOutputAt ?? 0,
-      foreground: paneIsActive(layouts, entry.handle)
-    }))
+    .map((entry) => {
+      const repoId = String(entry.worktreeId ?? '').split('::')[0]
+      const repo = repos.byId.get(repoId) ?? repos.byPath.get(entry.worktreePath) ?? null
+      const worktreeName = (entry.worktreePath ?? '').split('/').filter(Boolean).pop() ?? ''
+      return {
+        terminalHandle: entry.handle,
+        tabTitle: String(tabTitles.get(entry.handle) || entry.title || '')
+          .replace(/^[^\w(]+\s*/, '')
+          .slice(0, 70),
+        worktreePath: entry.worktreePath ?? '',
+        worktreeName,
+        projectName: repo?.projectName || worktreeName,
+        projectIcon: repo?.projectIcon ?? null,
+        projectBadgeColor: repo?.projectBadgeColor ?? null,
+        branch: String(entry.branch ?? '').replace(/^refs\/heads\//, ''),
+        agentIdentity: entry.agentIdentity,
+        lastOutputAt: entry.lastOutputAt ?? 0,
+        foreground: paneIsActive(layouts, entry.handle)
+      }
+    })
     .sort((a, b) => b.lastOutputAt - a.lastOutputAt)
 
   if (targets.length === 0) {
