@@ -12,7 +12,8 @@ const HOST_VERSION = '1.4.0'
 // repo, so a pulled repo and an installed bridge drift apart silently otherwise.
 // Protocol 3 adds projectName / projectIcon / projectBadgeColor to every target
 // (the panel renders the Orca project, not the worktree folder name).
-const PROTOCOL = 3
+// Protocol 4 adds working (true while the agent is mid-turn) to every target.
+const PROTOCOL = 4
 const SETTLE_MS = Number(process.env.GOFISH_SETTLE_MS) || 5000
 const ORCA = process.env.GOFISH_ORCA_BIN || 'orca'
 const LOG = join(homedir(), 'Library', 'Logs', 'gofish-orca-host.log')
@@ -75,7 +76,7 @@ if (inheritedIdentity.length > 0) {
   log(`not forwarding caller identity: ${inheritedIdentity.join(',')}`)
 }
 
-function orca(args, timeoutMs = 120000) {
+function orca(args, timeoutMs = 120000, quiet = false) {
   return new Promise((resolve) => {
     execFile(
       ORCA,
@@ -97,7 +98,7 @@ function orca(args, timeoutMs = 120000) {
           (parsed && (parsed.error?.message || parsed.error || parsed.message)) ||
           String(stderr || '').trim().split('\n').slice(-3).join(' ') ||
           (error ? error.message : 'orca returned no parsable result')
-        log(`FAIL ${args[0]} ${args[1] ?? ''}: ${reason}`)
+        if (!quiet) log(`FAIL ${args[0]} ${args[1] ?? ''}: ${reason}`)
         resolve({ ok: false, reason: String(reason).slice(0, 600), raw: parsed })
       })
   })
@@ -223,6 +224,18 @@ async function repoMetadata() {
   return { byId, byPath }
 }
 
+// `terminal list` carries no task state. `tui-idle` is satisfied while the agent
+// sits at its prompt, so a timeout means it is still mid-turn. A failed probe
+// counts as working, which is the safer guess for a button that sends work.
+async function agentIsIdle(handle) {
+  const waited = await orca(
+    ['terminal', 'wait', '--terminal', handle, '--for', 'tui-idle', '--timeout-ms', '400', '--json'],
+    8000,
+    true
+  )
+  return waited.ok && waited.result?.wait?.satisfied === true
+}
+
 async function listTargets() {
   const listing = await orca(['terminal', 'list', '--include-visual-layouts', '--json'], 25000)
   if (!listing.ok) return { ok: false, reason: listing.reason }
@@ -253,6 +266,11 @@ async function listTargets() {
       }
     })
     .sort((a, b) => b.lastOutputAt - a.lastOutputAt)
+
+  const idle = await Promise.all(targets.map((target) => agentIsIdle(target.terminalHandle)))
+  targets.forEach((target, i) => {
+    target.working = !idle[i]
+  })
 
   if (targets.length === 0) {
     return { ok: false, reason: 'No live agent terminal in Orca. Start one, then refresh.' }

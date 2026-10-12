@@ -18,7 +18,7 @@ const AGENTS = [
 
 const INTENTS = ['fix', 'change', 'question', 'approve']
 const HOST = 'com.gofish.orca'
-const PROTOCOL = 3
+const PROTOCOL = 4
 
 let destination = null
 let destinationTargets = []
@@ -286,7 +286,7 @@ function renderDestinationValue() {
 let menuActive = -1
 
 function destinationOptionNodes() {
-  return [...destinationList.children]
+  return [...destinationList.querySelectorAll('.destination-option')]
 }
 
 function setMenuActive(index) {
@@ -297,6 +297,8 @@ function setMenuActive(index) {
 }
 
 function openDestinationMenu() {
+  // Rebuild so the relative times are current when the menu opens.
+  buildDestinationMenu()
   destinationList.hidden = false
   destinationSelect.setAttribute('aria-expanded', 'true')
   const options = destinationOptionNodes()
@@ -324,18 +326,65 @@ function chooseDestination(handle) {
   closeDestinationMenu()
 }
 
+// Menu order only: the default destination still comes from Orca's own order.
+// Projects sort by name, and chats sort by name within their project.
+function projectKey(target) {
+  return target.projectName || target.worktreeName || target.worktreePath || ''
+}
+
+function sortDestinations(targets) {
+  const byName = (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true })
+  return [...targets].sort(
+    (a, b) => byName(projectKey(a), projectKey(b)) || byName(a.tabTitle || '', b.tabTitle || '')
+  )
+}
+
+// Short relative time for the menu, e.g. "now", "1 min", "2 h", "3 d".
+function timeAgo(ms) {
+  if (!ms) return '—'
+  const minutes = Math.floor(Math.max(0, Date.now() - ms) / 60000)
+  if (minutes < 1) return 'now'
+  if (minutes < 60) return `${minutes} min`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} h`
+  return `${Math.floor(hours / 24)} d`
+}
+
 function buildDestinationMenu() {
   destinationList.replaceChildren()
-  for (const target of destinationTargets) {
+  let group = null
+  for (const target of sortDestinations(destinationTargets)) {
+    if (projectKey(target) !== group) {
+      group = projectKey(target)
+      // The header is the divider between projects. It is not an option.
+      const header = document.createElement('li')
+      header.className = 'destination-group'
+      header.setAttribute('role', 'presentation')
+      const name = document.createElement('span')
+      name.className = 'destination-group-name'
+      name.textContent = group || 'Ungrouped'
+      header.append(projectIcon(target), name)
+      destinationList.appendChild(header)
+    }
     const option = document.createElement('li')
     option.className = 'destination-option'
     option.dataset.handle = target.terminalHandle
     option.setAttribute('role', 'option')
     option.setAttribute('aria-selected', String(target === destination))
+    // Row order: status, when it last ran, chat name, agent.
+    const status = document.createElement('span')
+    status.className = `status-dot ${target.working ? 'is-working' : 'is-done'}`
+    status.title = target.working ? 'In progress' : 'Finished'
+    const when = document.createElement('span')
+    when.className = 'destination-time'
+    when.textContent = timeAgo(target.lastOutputAt)
     const text = document.createElement('span')
     text.className = 'destination-option-text'
-    text.textContent = describeTarget(target)
-    option.append(projectIcon(target), text)
+    text.textContent = target.tabTitle || 'untitled'
+    const agent = document.createElement('span')
+    agent.className = 'destination-agent'
+    agent.textContent = target.agentIdentity
+    option.append(status, when, text, agent)
     option.addEventListener('click', () => chooseDestination(target.terminalHandle))
     destinationList.appendChild(option)
   }
