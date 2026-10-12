@@ -11,7 +11,9 @@ const AGENTS = [
   'zcode',
   'opencode',
   'opencode2',
-  'grok'
+  'grok',
+  'crush',
+  'pi'
 ]
 
 const INTENTS = ['fix', 'change', 'question', 'approve']
@@ -53,6 +55,11 @@ const destinationValue = destinationSelect.querySelector('.destination-value')
 const destinationText = destinationRow.querySelector('.destination-text')
 const destinationRefresh = document.getElementById('destination-refresh')
 const agentSelect = document.getElementById('agent')
+const agentPicker = document.querySelector('.agent-picker')
+const agentButton = document.getElementById('agent-button')
+const agentValue = agentButton.querySelector('.agent-value')
+const agentList = document.getElementById('agent-list')
+const SVG_NS = 'http://www.w3.org/2000/svg'
 const sendAllButton = document.getElementById('send-all')
 const deviceButtons = [...document.querySelectorAll('.device')]
 
@@ -360,6 +367,136 @@ async function refreshDestination() {
   destinationSelect.hidden = false
 }
 
+// Monogram tiles, the same tinted-initial style the panel uses for projects.
+// A native <select> cannot draw these, so the picker below is a custom menu
+// that mirrors the hidden <select>, which stays the source of truth.
+const AGENT_MARKS = {
+  claude: 'CL',
+  codex: 'CX',
+  cursor: 'CU',
+  antigravity: 'AG',
+  muse: 'MU',
+  zcode: 'ZC',
+  opencode: 'OC',
+  opencode2: 'O2',
+  grok: 'GK',
+  crush: 'CR',
+  pi: 'PI'
+}
+
+function agentIcon(id) {
+  const svg = document.createElementNS(SVG_NS, 'svg')
+  svg.setAttribute('class', 'agent-icon')
+  svg.setAttribute('viewBox', '0 0 14 14')
+  svg.setAttribute('aria-hidden', 'true')
+  const tile = document.createElementNS(SVG_NS, 'rect')
+  tile.setAttribute('x', '0.5')
+  tile.setAttribute('y', '0.5')
+  tile.setAttribute('width', '13')
+  tile.setAttribute('height', '13')
+  tile.setAttribute('rx', '2.5')
+  const mark = document.createElementNS(SVG_NS, 'text')
+  mark.setAttribute('x', '7')
+  mark.setAttribute('y', '7')
+  mark.setAttribute('text-anchor', 'middle')
+  mark.setAttribute('dominant-baseline', 'central')
+  mark.textContent = AGENT_MARKS[id] ?? id.slice(0, 2).toUpperCase()
+  svg.append(tile, mark)
+  return svg
+}
+
+function renderAgentValue() {
+  const id = agentSelect.value
+  agentValue.replaceChildren()
+  if (!id) return
+  const text = document.createElement('span')
+  text.className = 'destination-option-text'
+  text.textContent = id
+  agentValue.append(agentIcon(id), text)
+}
+
+function syncAgentMenu() {
+  renderAgentValue()
+  for (const option of agentList.children) {
+    option.setAttribute('aria-selected', String(option.dataset.agent === agentSelect.value))
+  }
+}
+
+function buildAgentMenu() {
+  agentList.replaceChildren()
+  for (const option of agentSelect.options) {
+    const item = document.createElement('li')
+    item.className = 'destination-option'
+    item.dataset.agent = option.value
+    item.setAttribute('role', 'option')
+    const text = document.createElement('span')
+    text.className = 'destination-option-text'
+    text.textContent = option.value
+    item.append(agentIcon(option.value), text)
+    item.addEventListener('click', () => chooseAgent(option.value))
+    agentList.appendChild(item)
+  }
+  syncAgentMenu()
+}
+
+let agentActive = 0
+
+function agentOptionNodes() {
+  return [...agentList.children]
+}
+
+function setAgentActive(index) {
+  const options = agentOptionNodes()
+  if (options.length === 0) return
+  agentActive = (index + options.length) % options.length
+  options.forEach((option, i) => option.classList.toggle('is-active', i === agentActive))
+  options[agentActive].scrollIntoView({ block: 'nearest' })
+}
+
+function openAgentMenu() {
+  agentList.hidden = false
+  agentButton.setAttribute('aria-expanded', 'true')
+  const current = agentOptionNodes().findIndex((option) => option.dataset.agent === agentSelect.value)
+  setAgentActive(current >= 0 ? current : 0)
+}
+
+function closeAgentMenu() {
+  if (agentList.hidden) return
+  agentList.hidden = true
+  agentButton.setAttribute('aria-expanded', 'false')
+  for (const option of agentList.children) option.classList.remove('is-active')
+}
+
+function chooseAgent(id) {
+  agentSelect.value = id
+  // Fire the change event the hidden select already listens for, so the pin
+  // and the session storage update exactly as a native pick would.
+  agentSelect.dispatchEvent(new Event('change'))
+  syncAgentMenu()
+  closeAgentMenu()
+}
+
+agentButton.addEventListener('click', () => {
+  if (agentList.hidden) openAgentMenu()
+  else closeAgentMenu()
+})
+agentButton.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    closeAgentMenu()
+  } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault()
+    if (agentList.hidden) openAgentMenu()
+    else setAgentActive(agentActive + (event.key === 'ArrowDown' ? 1 : -1))
+  } else if (event.key === 'Enter' && !agentList.hidden) {
+    event.preventDefault()
+    const option = agentOptionNodes()[agentActive]
+    if (option) chooseAgent(option.dataset.agent)
+  }
+})
+document.addEventListener('click', (event) => {
+  if (!agentPicker.contains(event.target)) closeAgentMenu()
+})
+
 let knownAgents = [...AGENTS]
 
 function fillAgents(ids) {
@@ -380,6 +517,7 @@ function fillAgents(ids) {
   } else {
     agentSelect.value = list[0]
   }
+  buildAgentMenu()
 }
 
 fillAgents(AGENTS)
@@ -393,6 +531,7 @@ async function restoreAgent() {
   if (stored.agent && knownAgents.includes(stored.agent)) {
     agentSelect.value = stored.agent
     agentPinned = true
+    syncAgentMenu()
   }
 }
 
@@ -404,6 +543,7 @@ function followDestinationAgent() {
   if (agentPinned) return
   const identity = destination?.agentIdentity
   if (identity && knownAgents.includes(identity)) agentSelect.value = identity
+  syncAgentMenu()
 }
 
 agentSelect.addEventListener('change', () => {
@@ -543,8 +683,6 @@ async function sendCapture(capture, node) {
   if (watched) postWatch()
   return true
 }
-
-const SVG_NS = 'http://www.w3.org/2000/svg'
 
 function showWorking(tag) {
   const svg = document.createElementNS(SVG_NS, 'svg')

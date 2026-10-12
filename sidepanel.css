@@ -321,6 +321,12 @@ h1 {
   color: var(--ink-soft);
 }
 
+.agent-picker {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
 .agent-select {
   flex: 1;
   min-width: 0;
@@ -331,6 +337,32 @@ h1 {
   background: none;
   font: 400 11px/1.4 var(--font-mono);
   color: var(--ink);
+}
+
+.agent-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.agent-icon rect {
+  fill: var(--line-soft);
+  stroke: var(--line);
+}
+
+.agent-icon text {
+  fill: var(--ink-soft);
+  font-family: var(--font-ui);
+  font-size: 5.5px;
+  font-weight: 600;
 }
 
 .toggles {

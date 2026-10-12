@@ -29,7 +29,9 @@ const WORKER_AGENTS = [
   'zcode',
   'opencode',
   'opencode2',
-  'grok'
+  'grok',
+  'crush',
+  'pi'
 ]
 
 function log(line) {

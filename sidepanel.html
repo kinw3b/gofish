@@ -76,8 +76,22 @@
       </div>
 
       <div class="agent-row">
-        <label class="agent-label" for="agent">Run subagents with</label>
-        <select id="agent" class="agent-select" aria-label="Agent to run subagents with"></select>
+        <label class="agent-label" for="agent-button">Run subagents with</label>
+        <div class="agent-picker">
+          <select id="agent" class="agent-select" aria-label="Agent to run subagents with" hidden></select>
+          <button
+            id="agent-button"
+            class="agent-select agent-button"
+            type="button"
+            aria-haspopup="listbox"
+            aria-expanded="false"
+            aria-label="Agent to run subagents with"
+          >
+            <span class="destination-value agent-value"></span>
+            <span class="destination-caret" aria-hidden="true">▾</span>
+          </button>
+          <ul id="agent-list" class="destination-list agent-list" role="listbox" aria-label="Agent to run subagents with" hidden></ul>
+        </div>
       </div>
 
       <div class="toggles">
