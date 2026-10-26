@@ -107,8 +107,13 @@ the refresh button fell outside the panel. Fixed with `grid-template-columns: mi
 - An inert empty Run `run_496c35efe758` was left behind by an early failed attempt. Harmless.
 - `install.sh` is macOS only. Linux native-messaging manifest dirs differ
   (`~/.config/google-chrome/NativeMessagingHosts`); Windows needs a registry key.
-- The host's `listTargets` filters to `agentIdentity && connected && writable && !orphaned`, which
-  hides plain shell terminals. That is deliberate, but it also means a worktree with no agent
-  running cannot be a destination.
+- Native Orca chats are structured agent sessions (`worktree ps` agents with
+  `structured-agent-session-…` pane keys). `terminal list` only returns PTYs, and Orca dropped
+  `agentIdentity` from that listing, so a filter on `agentIdentity && connected && writable`
+  showed an empty destination row even with live Grok/Claude chats. Destinations now come from
+  `worktree ps` (`subagentObservation === 'live'`). Orca refuses `--from orca_session_id:<chat>`
+  from an unattested CLI, so Send binds the Run to a live PTY in that worktree and still launches
+  the worker there. Plain shells stay hidden. A worktree with a live chat but no PTY cannot be a
+  destination.
 - Screenshots come from `captureVisibleTab`, so only the on-screen part of a tall element is
   captured. Scroll-and-stitch would fix it.

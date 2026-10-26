@@ -39,7 +39,7 @@ pick, instead of pasting text at you. It binds an orchestration Run to that conv
 terminal as coordinator and starts a worker with `worker-start`. The worker's `worker_done`
 report lands back in that same conversation, so the agent you are talking to sees the result.
 
-The destination row lists every live agent terminal, most recently active first, and remembers
+The destination row lists every live Orca chat (native Grok/Claude sessions included), most recently active first, and remembers
 your choice. It is a picker rather than a guess on purpose: Orca's `active` worktree selector
 means "the worktree containing the current directory", and this bridge runs with no meaningful
 working directory, so there is no focused conversation for it to detect.
@@ -55,7 +55,7 @@ refuses those: `Agent launcher opencode is disabled or unavailable`. Which launc
 lives in Orca's settings and the CLI does not report it, so this is a pick, not a detection.
 
 Use the refresh control on the destination row to re-resolve after you open or close an Orca
-conversation. A dispatch Orca refuses is reported on the catch itself, with Orca's own wording.
+conversation. Native chats need a live terminal in the same workspace so Send can bind the Run. A dispatch Orca refuses is reported on the catch itself, with Orca's own wording.
 
 When that worker finishes, the catch closes itself: a green **completed** pill, and the note,
 intent, and action buttons lock. A failed worker gets a **failed** pill instead. The bridge

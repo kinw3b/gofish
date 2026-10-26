@@ -7,7 +7,7 @@ import { randomBytes } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-const HOST_VERSION = '1.4.0'
+const HOST_VERSION = '1.5.0'
 // Bumped whenever a reply shape changes. install.sh copies this file out of the
 // repo, so a pulled repo and an installed bridge drift apart silently otherwise.
 // Protocol 3 adds projectName / projectIcon / projectBadgeColor to every target
@@ -236,44 +236,119 @@ async function agentIsIdle(handle) {
   return waited.ok && waited.result?.wait?.satisfied === true
 }
 
+// Native Orca chats are structured agent sessions, not PTYs. `terminal list` only
+// returns shells, so destinations come from `worktree ps`. Orca refuses --from
+// orca_session_id:<chat> from an unattested CLI ("a chat is identified only by
+// the Orca session ID its own environment sends"), so Send binds the Run to a
+// live PTY in that worktree and still launches the worker there.
+const SESSION_PANE_PREFIX = 'structured-agent-session-'
+
+function sessionIdFromPaneKey(paneKey) {
+  if (typeof paneKey !== 'string' || !paneKey.startsWith(SESSION_PANE_PREFIX)) return null
+  const rest = paneKey.slice(SESSION_PANE_PREFIX.length)
+  const colon = rest.lastIndexOf(':')
+  const id = (colon === -1 ? rest : rest.slice(0, colon)).trim()
+  return id.length > 0 ? id : null
+}
+
+function chatTitle(agent) {
+  const named = agent?.displayName || agent?.taskTitle
+  if (typeof named === 'string' && named.trim()) return named.trim().slice(0, 70)
+  return String(agent?.prompt || '')
+    .replace(/\[Image #\d+\]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 70)
+}
+
+function livePtyByWorktree(terminals) {
+  const byPath = new Map()
+  for (const entry of terminals ?? []) {
+    if (!entry?.connected || !entry?.writable || entry?.orphaned) continue
+    const path = entry.worktreePath
+    if (typeof path !== 'string' || path.length === 0) continue
+    const current = byPath.get(path)
+    if (!current || (entry.lastOutputAt ?? 0) > (current.lastOutputAt ?? 0)) byPath.set(path, entry)
+  }
+  return byPath
+}
+
+function projectFields(repos, worktreeId, worktreePath) {
+  const repoId = String(worktreeId ?? '').split('::')[0]
+  const repo = repos.byId.get(repoId) ?? repos.byPath.get(worktreePath) ?? null
+  const worktreeName = (worktreePath ?? '').split('/').filter(Boolean).pop() ?? ''
+  return {
+    worktreePath: worktreePath ?? '',
+    worktreeName,
+    projectName: repo?.projectName || worktreeName,
+    projectIcon: repo?.projectIcon ?? null,
+    projectBadgeColor: repo?.projectBadgeColor ?? null
+  }
+}
+
 async function listTargets() {
   const listing = await orca(['terminal', 'list', '--include-visual-layouts', '--json'], 25000)
-  if (!listing.ok) return { ok: false, reason: listing.reason }
+  const ps = await orca(['worktree', 'ps', '--limit', '100', '--json'], 25000)
+  if (!listing.ok && !ps.ok) return { ok: false, reason: listing.reason || ps.reason }
 
   const repos = await repoMetadata()
-  const layouts = listing.result.visualLayouts
+  const terminals = listing.ok ? listing.result.terminals ?? [] : []
+  const layouts = listing.ok ? listing.result.visualLayouts : []
   const tabTitles = tabTitleByHandle(layouts)
-  const targets = (listing.result.terminals ?? [])
+  const ptyByPath = livePtyByWorktree(terminals)
+
+  const sessionTargets = []
+  for (const worktree of ps.ok ? ps.result.worktrees ?? [] : []) {
+    const path = worktree.path
+    if (typeof path !== 'string' || path.length === 0) continue
+    const pty = ptyByPath.get(path)
+    if (!pty) continue
+    const project = projectFields(repos, worktree.worktreeId ?? worktree.id, path)
+    for (const agent of worktree.agents ?? []) {
+      if (agent?.parentPaneKey) continue
+      if (agent?.subagentObservation !== 'live') continue
+      const sessionId = sessionIdFromPaneKey(agent.paneKey)
+      if (!sessionId) continue
+      sessionTargets.push({
+        terminalHandle: `orca_session_id:${sessionId}`,
+        coordinatorHandle: pty.handle,
+        tabTitle: chatTitle(agent) || 'untitled',
+        ...project,
+        branch: String(worktree.branch ?? '').replace(/^refs\/heads\//, ''),
+        agentIdentity: agent.agentType || 'agent',
+        lastOutputAt: agent.updatedAt ?? worktree.lastOutputAt ?? 0,
+        foreground: worktree.isActive === true,
+        working: agent.state === 'working' || agent.mainAgent?.state === 'working'
+      })
+    }
+  }
+
+  const tuiTargets = terminals
     .filter((entry) => entry.agentIdentity && entry.connected && entry.writable && !entry.orphaned)
     .map((entry) => {
-      const repoId = String(entry.worktreeId ?? '').split('::')[0]
-      const repo = repos.byId.get(repoId) ?? repos.byPath.get(entry.worktreePath) ?? null
-      const worktreeName = (entry.worktreePath ?? '').split('/').filter(Boolean).pop() ?? ''
+      const project = projectFields(repos, entry.worktreeId, entry.worktreePath)
       return {
         terminalHandle: entry.handle,
         tabTitle: String(tabTitles.get(entry.handle) || entry.title || '')
           .replace(/^[^\w(]+\s*/, '')
           .slice(0, 70),
-        worktreePath: entry.worktreePath ?? '',
-        worktreeName,
-        projectName: repo?.projectName || worktreeName,
-        projectIcon: repo?.projectIcon ?? null,
-        projectBadgeColor: repo?.projectBadgeColor ?? null,
+        ...project,
         branch: String(entry.branch ?? '').replace(/^refs\/heads\//, ''),
         agentIdentity: entry.agentIdentity,
         lastOutputAt: entry.lastOutputAt ?? 0,
         foreground: paneIsActive(layouts, entry.handle)
       }
     })
-    .sort((a, b) => b.lastOutputAt - a.lastOutputAt)
 
-  const idle = await Promise.all(targets.map((target) => agentIsIdle(target.terminalHandle)))
-  targets.forEach((target, i) => {
+  const idle = await Promise.all(tuiTargets.map((target) => agentIsIdle(target.terminalHandle)))
+  tuiTargets.forEach((target, i) => {
     target.working = !idle[i]
   })
 
+  const targets = [...sessionTargets, ...tuiTargets].sort((a, b) => b.lastOutputAt - a.lastOutputAt)
+  log(`RESOLVE sessions=${sessionTargets.length} tui=${tuiTargets.length}`)
   if (targets.length === 0) {
-    return { ok: false, reason: 'No live agent terminal in Orca. Start one, then refresh.' }
+    return { ok: false, reason: 'No live agent conversation in Orca. Start one, then refresh.' }
   }
   return { ok: true, targets }
 }
@@ -316,10 +391,18 @@ async function dispatch(message) {
   }
   const resolved = { ok: true, target: chosen }
 
+  const fromHandle = resolved.target.coordinatorHandle || resolved.target.terminalHandle
+  if (!fromHandle || String(fromHandle).startsWith('orca_session_id:')) {
+    return {
+      ok: false,
+      reason: 'That conversation has no live terminal to dispatch from. Open a terminal in its Orca workspace, then refresh.',
+      target: resolved.target
+    }
+  }
   const run = await ensureRun(
     message.runId,
     message.objective || 'GoFish design feedback',
-    resolved.target.terminalHandle
+    fromHandle
   )
   if (!run.ok) return { ok: false, reason: run.reason, target: resolved.target }
 
@@ -327,7 +410,7 @@ async function dispatch(message) {
   const args = [
     'orchestration', 'worker-start',
     '--run', run.runId,
-    '--from', resolved.target.terminalHandle,
+    '--from', fromHandle,
     '--spec', message.spec,
     '--worktree', `path:${resolved.target.worktreePath}`,
     '--agent', agent,
