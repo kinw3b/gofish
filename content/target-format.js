@@ -85,7 +85,13 @@
     if (!path && payload && payload.ancestorPath && payload.ancestorPath.length > 0) {
       path = payload.ancestorPath.join(' > ')
     }
-    return [url, path].filter(Boolean).join('\n')
+    var html = (target && target.htmlSnippet) || ''
+    var lines = [url, path].filter(Boolean)
+    if (html) {
+      if (lines.length > 0) lines.push('')
+      lines.push(html)
+    }
+    return lines.join('\n')
   }
 
   function maxBacktickRunLength(content, floor) {
