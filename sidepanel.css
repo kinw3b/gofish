@@ -766,6 +766,17 @@ main {
   gap: 5px;
 }
 
+button.copy-min {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 8px;
+}
+
+button.copy-min svg {
+  display: block;
+}
+
 .catch-error {
   margin: 0;
   padding: 6px 8px;

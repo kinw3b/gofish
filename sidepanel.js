@@ -1075,6 +1075,9 @@ function renderCapture(capture) {
   node.querySelector('.copy-md').addEventListener('click', () => {
     void writeText(OrcaTargetFormat.formatAnnotationsAsMarkdown([capture]), 'Copied markdown')
   })
+  node.querySelector('.copy-min').addEventListener('click', () => {
+    void writeText(OrcaTargetFormat.formatGrabPayloadAsMinimal(capture.payload), 'Copied path')
+  })
   node.querySelector('.copy-img').addEventListener('click', () => {
     void writeImage(capture)
   })

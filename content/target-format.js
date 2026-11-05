@@ -78,6 +78,15 @@
     return lines.join('\n').replace(/\s+$/, '')
   }
 
+  function formatGrabPayloadAsMinimal(payload) {
+    var url = (payload && payload.page && payload.page.sanitizedUrl) || ''
+    var path =
+      payload && payload.ancestorPath && payload.ancestorPath.length > 0
+        ? payload.ancestorPath.join(' > ')
+        : ''
+    return [url, path].filter(Boolean).join('\n')
+  }
+
   function maxBacktickRunLength(content, floor) {
     var maxRun = floor
     var currentRun = 0
@@ -226,6 +235,7 @@
 
   globalThis.OrcaTargetFormat = {
     formatGrabPayloadAsText: formatGrabPayloadAsText,
+    formatGrabPayloadAsMinimal: formatGrabPayloadAsMinimal,
     formatAnnotationsAsMarkdown: formatAnnotationsAsMarkdown
   }
 })()

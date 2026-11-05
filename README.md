@@ -21,7 +21,8 @@ paste is byte-identical to what Orca's own browser produces.
 - Each catch lands in the list. It does not touch the clipboard unless **Copy on catch** is on.
   **Esc** in the page, or **Reel in**, disarms.
 - Open a catch for its screenshot, an intent (fix / change / question / approve), a note, and
-  `Text` (Orca's grab format), `Markdown` (one Design Feedback block), `Image` (cropped PNG).
+  `Text` (Orca's grab format), `Markdown` (one Design Feedback block), the copy icon (page URL
+  and ancestor path only), `Image` (cropped PNG).
 - **Copy all** — every catch as one `## Design Feedback` markdown block, the same thing Orca's
   annotation tray sends to a chat.
 
