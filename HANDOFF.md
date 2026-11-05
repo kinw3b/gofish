@@ -9,7 +9,7 @@ what you need to know to keep building it.
 | --- | --- |
 | `content/target-picker.js` | The picker. Runs in the page's **MAIN world**. Ported from Orca's `src/main/browser/grab-guest-*.ts`. |
 | `content/target-bridge.js` | Isolated-world relay. Passes runtime messages to the picker over `window.postMessage`. |
-| `content/target-format.js` | `formatGrabPayloadAsText` / `formatAnnotationsAsMarkdown`, byte-identical to Orca's. `formatGrabPayloadAsMinimal` is GoFish's two-line URL + ancestor path copy. |
+| `content/target-format.js` | `formatGrabPayloadAsText` / `formatAnnotationsAsMarkdown`, byte-identical to Orca's. `formatGrabPayloadAsMinimal` is GoFish's two-line URL + full DOM path copy. |
 | `orca-task-spec.js` | Builds the orchestration Task spec from a catch. IIFE-wrapped; exports `globalThis.OrcaTaskSpec`. |
 | `sidepanel.{html,css,js}` | The panel. |
 | `native/gofish-orca-host.mjs` | Native messaging host. Shells out to the `orca` CLI. `ping` / `resolve` / `dispatch` / `watch`. |

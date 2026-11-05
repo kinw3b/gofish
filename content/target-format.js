@@ -80,10 +80,11 @@
 
   function formatGrabPayloadAsMinimal(payload) {
     var url = (payload && payload.page && payload.page.sanitizedUrl) || ''
-    var path =
-      payload && payload.ancestorPath && payload.ancestorPath.length > 0
-        ? payload.ancestorPath.join(' > ')
-        : ''
+    var target = payload && payload.target
+    var path = (target && target.fullPath) || ''
+    if (!path && payload && payload.ancestorPath && payload.ancestorPath.length > 0) {
+      path = payload.ancestorPath.join(' > ')
+    }
     return [url, path].filter(Boolean).join('\n')
   }
 
